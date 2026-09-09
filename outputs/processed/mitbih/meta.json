@@ -1,0 +1,20 @@
+{
+  "n_beats": 109436,
+  "class_counts": {
+    "N": 90581,
+    "S": 2780,
+    "V": 7235,
+    "F": 802,
+    "Q": 8038
+  },
+  "n_train": 59748,
+  "n_test": 49688,
+  "method": "stft",
+  "fs": 360,
+  "signal_len": 360,
+  "spec_shape": [
+    64,
+    64
+  ],
+  "clinical_dim": 8
+}

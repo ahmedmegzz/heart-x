@@ -1,0 +1,14 @@
+{
+  "n": 500,
+  "class_counts": {
+    "NORM": 292,
+    "MI": 40,
+    "STTC": 53,
+    "CD": 84,
+    "HYP": 31
+  },
+  "n_train": 432,
+  "n_test": 68,
+  "method": "stft",
+  "fs": 100
+}
