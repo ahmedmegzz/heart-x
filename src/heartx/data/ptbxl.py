@@ -53,7 +53,7 @@ def load_ptbxl_signals(
     lead: int = 1,
     max_records: int | None = None,
     show_progress: bool = True,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Load lead-wise 10 s ECG windows with single primary superclass labels.
 
@@ -63,6 +63,7 @@ def load_ptbxl_signals(
     y : (N,) int64  primary superclass index
     folds : (N,) strat_fold
     multi_hot : (N, C) float32 multi-label targets
+    patient_ids : (N,) patient group keys for patient-wise splits
     """
     root = Path(data_dir or PTBXL_DIR)
     df = meta.copy()
@@ -75,6 +76,7 @@ def load_ptbxl_signals(
     labels = []
     folds = []
     multi = []
+    patient_ids = []
 
     iterator = (
         tqdm(df.itertuples(), total=len(df), desc="PTB-XL records")
@@ -115,9 +117,12 @@ def load_ptbxl_signals(
         labels.append(PTBXL_TO_IDX[primary])
         folds.append(int(row.strat_fold))
         multi.append(mh)
+        pid = getattr(row, "patient_id", None)
+        patient_ids.append(str(int(pid)) if pid == pid and pid is not None else str(row.Index))
 
     x = np.stack(signals, axis=0)
     y = np.asarray(labels, dtype=np.int64)
     fold_arr = np.asarray(folds, dtype=np.int64)
     multi_hot = np.stack(multi, axis=0)
-    return x, y, fold_arr, multi_hot
+    patients = np.asarray(patient_ids)
+    return x, y, fold_arr, multi_hot, patients

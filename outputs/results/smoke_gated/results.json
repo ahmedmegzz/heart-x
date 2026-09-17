@@ -1,0 +1,71 @@
+{
+  "run_name": "smoke_gated",
+  "model": "dual",
+  "fusion": "gated",
+  "loss": "ce",
+  "sampler": "none",
+  "class_weight": "balanced",
+  "epochs": 3,
+  "seed": 42,
+  "primary_metric": "f1_macro",
+  "test_f1_macro": 0.35547270845034984,
+  "test_accuracy": 0.7222390776699029,
+  "test_precision_macro": 0.3668886956895723,
+  "test_recall_macro": 0.4549338436239885,
+  "test_specificity_macro": 0.8838490805659216,
+  "per_class": {
+    "N": {
+      "precision": 0.9535947712418301,
+      "recall": 0.7362489486963835,
+      "f1": 0.8309444708115804,
+      "support": 5945,
+      "specificity": 0.6707882534672212
+    },
+    "S": {
+      "precision": 0.0720250521920668,
+      "recall": 0.3026315789473684,
+      "f1": 0.1163575042158516,
+      "support": 228,
+      "specificity": 0.8603079823996538
+    },
+    "V": {
+      "precision": 0.7827225130890052,
+      "recall": 0.7786458333333334,
+      "f1": 0.7806788511749347,
+      "support": 384,
+      "specificity": 0.986630154637586
+    },
+    "F": {
+      "precision": 0.026101141924959218,
+      "recall": 0.45714285714285713,
+      "f1": 0.04938271604938271,
+      "support": 35,
+      "specificity": 0.9089522647538372
+    },
+    "Q": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 0,
+      "specificity": 0.9925667475713098
+    }
+  },
+  "history": {
+    "train_loss": [
+      0.9451773642624964,
+      0.5403645362869568,
+      0.6315906040491492
+    ],
+    "val_acc": [
+      0.9090150250417363,
+      0.6068447412353923,
+      0.8171953255425709
+    ],
+    "val_f1": [
+      0.2666313181463236,
+      0.29477661861698257,
+      0.33132707212977336
+    ]
+  },
+  "checkpoint": "/home/kimbra/Documents/GitHub/tez/outputs/checkpoints/heartx_smoke_gated.pt"
+}

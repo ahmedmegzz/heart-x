@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from heartx.config import AAMI_CLASSES, CHECKPOINT_DIR, FIGURE_DIR, PROCESSED_DIR  # noqa: E402
-from heartx.models.dual_stream import HeartXDualStream  # noqa: E402
+from heartx.models.dual_stream import build_heartx_model  # noqa: E402
 from heartx.utils.viz import plot_mm_gradcam  # noqa: E402
 from heartx.xai.mm_gradcam import MMGradCAMHooked  # noqa: E402
 
@@ -22,7 +22,9 @@ from heartx.xai.mm_gradcam import MMGradCAMHooked  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=PROCESSED_DIR / "mitbih" / "mitbih_dual.npz")
-    parser.add_argument("--checkpoint", type=Path, default=CHECKPOINT_DIR / "heartx_dual.pt")
+    parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument("--model", default="dual")
+    parser.add_argument("--fusion", choices=["concat", "gated", "attention"], default="concat")
     parser.add_argument("--num-samples", type=int, default=8)
     parser.add_argument("--out-dir", type=Path, default=FIGURE_DIR / "mm_gradcam")
     args = parser.parse_args()
@@ -35,9 +37,18 @@ def main() -> None:
     y = data["y"][test_mask]
     clinical = data["clinical"][test_mask]
 
-    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
-    model = HeartXDualStream(
-        num_classes=len(AAMI_CLASSES), clinical_dim=clinical.shape[1]
+    ckpt_path = args.checkpoint
+    if ckpt_path is None:
+        candidates = sorted(CHECKPOINT_DIR.glob("heartx_*.pt"))
+        if not candidates:
+            raise FileNotFoundError("No checkpoint found")
+        ckpt_path = candidates[-1]
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    model = build_heartx_model(
+        args.model,
+        num_classes=len(AAMI_CLASSES),
+        clinical_dim=clinical.shape[1],
+        fusion_type=args.fusion,
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()

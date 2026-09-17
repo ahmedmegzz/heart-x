@@ -1,0 +1,15 @@
+MIT-BIH AAMI -> proxy:
+  N -> normal
+  S -> abnormal
+  V -> abnormal
+  F -> abnormal
+  Q -> abnormal
+PTB-XL superclass -> proxy:
+  NORM -> normal
+  MI -> abnormal
+  STTC -> abnormal
+  CD -> abnormal
+  HYP -> abnormal
+
+Limitation: beat-level arrhythmia classes cannot be mapped 1:1 onto
+PTB-XL diagnostic superclasses; evaluation is binary normal/abnormal proxy.

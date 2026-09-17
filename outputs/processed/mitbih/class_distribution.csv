@@ -1,0 +1,16 @@
+split,class,count
+train,N,5059
+train,S,44
+train,V,407
+train,F,41
+train,Q,1036
+val,N,1111
+val,S,7
+val,V,74
+val,F,6
+val,Q,0
+test,N,5945
+test,S,228
+test,V,384
+test,F,35
+test,Q,0

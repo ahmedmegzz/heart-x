@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-Train HEART-X dual-stream model on prepared MIT-BIH data (Aşama 4–5, 7).
+Train HEART-X dual-stream model (macro-F1 primary metric).
 
-Example
--------
-python scripts/train_heartx.py --epochs 10 --model dual
+Examples
+--------
+python scripts/train_heartx.py --model dual --fusion gated --epochs 10
+python scripts/train_heartx.py --model dual --loss focal --class-weight balanced --sampler none
+python scripts/train_heartx.py --model 1d_clinical --fusion concat
 """
 
 from __future__ import annotations
@@ -16,66 +18,94 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split
+from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from heartx.config import (  # noqa: E402
-    AAMI_CLASSES,
     BATCH_SIZE,
     CHECKPOINT_DIR,
     FIGURE_DIR,
     LEARNING_RATE,
     NUM_EPOCHS,
+    OUTPUT_DIR,
     PROCESSED_DIR,
     SEED,
-    USE_SMOTE,
     WEIGHT_DECAY,
 )
 from heartx.data.dataset import DualStreamECGDataset  # noqa: E402
-from heartx.models.dual_stream import (  # noqa: E402
-    HeartXDualStream,
-    SingleStream1D,
-    SingleStream2D,
-)
+from heartx.models.dual_stream import build_heartx_model  # noqa: E402
 from heartx.utils.balance import oversample_balance, set_seed  # noqa: E402
-from heartx.utils.train_utils import evaluate, fit  # noqa: E402
+from heartx.utils.train_utils import evaluate, fit, save_eval_artifacts  # noqa: E402
 from heartx.utils.viz import plot_confusion_matrix  # noqa: E402
 
+MODEL_CHOICES = [
+    "dual",
+    "dual_noclinical",
+    "1d",
+    "2d",
+    "clinical",
+    "1d_clinical",
+    "2d_clinical",
+    "1d_2d",
+    "1d_2d_clinical",
+]
 
-def build_model(name: str, num_classes: int, clinical_dim: int):
-    if name == "dual":
-        return HeartXDualStream(
-            num_classes=num_classes, clinical_dim=clinical_dim
-        )
-    if name == "dual_noclinical":
-        return HeartXDualStream(num_classes=num_classes, clinical_dim=0)
-    if name == "1d":
-        return SingleStream1D(num_classes=num_classes)
-    if name == "2d":
-        return SingleStream2D(num_classes=num_classes)
-    raise ValueError(f"Unknown model: {name}")
+
+def _needs_clinical(model_name: str) -> bool:
+    return model_name in {
+        "dual",
+        "clinical",
+        "1d_clinical",
+        "2d_clinical",
+        "1d_2d_clinical",
+    }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=PROCESSED_DIR / "mitbih" / "mitbih_dual.npz")
-    parser.add_argument("--model", choices=["dual", "dual_noclinical", "1d", "2d"], default="dual")
+    parser.add_argument("--model", choices=MODEL_CHOICES, default="dual")
+    parser.add_argument("--fusion", choices=["concat", "gated", "attention"], default="concat")
     parser.add_argument("--epochs", type=int, default=NUM_EPOCHS)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--lr", type=float, default=LEARNING_RATE)
-    parser.add_argument("--no-smote", action="store_true", help="Disable class oversampling")
+    parser.add_argument("--loss", choices=["ce", "focal"], default="ce")
+    parser.add_argument("--focal-gamma", type=float, default=2.0)
+    parser.add_argument(
+        "--class-weight",
+        choices=["none", "balanced"],
+        default="balanced",
+        help="Loss class weighting (computed on pre-oversample train labels)",
+    )
+    parser.add_argument(
+        "--sampler",
+        choices=["none", "random_oversample", "smote"],
+        default="none",
+        help="Train-set oversampling. smote regenerates spectrograms from synthetic 1D.",
+    )
+    # Backward-compatible aliases
+    parser.add_argument("--no-smote", action="store_true", help="Deprecated: use --sampler none")
     parser.add_argument(
         "--balance",
         choices=["random", "smote"],
-        default="random",
-        help="Oversampling strategy when balancing is enabled",
+        default=None,
+        help="Deprecated alias for --sampler",
     )
-    parser.add_argument("--max-train", type=int, default=None, help="Subsample train set for smoke tests")
+    parser.add_argument("--max-train", type=int, default=None)
+    parser.add_argument("--run-name", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=SEED)
     args = parser.parse_args()
-    set_seed(SEED)
+    set_seed(args.seed)
+
+    # Resolve sampler from legacy flags
+    sampler = args.sampler
+    if args.no_smote:
+        sampler = "none"
+    if args.balance is not None:
+        sampler = "random_oversample" if args.balance == "random" else "smote"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}", flush=True)
@@ -87,13 +117,29 @@ def main() -> None:
     clinical = data["clinical"]
     train_mask = data["train_mask"].astype(bool)
     test_mask = data["test_mask"].astype(bool)
+    if "val_mask" in data.files:
+        val_mask = data["val_mask"].astype(bool)
+    else:
+        # Backward compat: no patient-wise val in old npz — leave empty and error
+        raise RuntimeError(
+            "Dataset missing val_mask. Re-run scripts/prepare_mitbih.py "
+            "(patient-wise split)."
+        )
     class_names = [str(c) for c in data["class_names"]]
+    fs = float(data["fs"]) if "fs" in data.files else 360.0
+    method = str(data["method"]) if "method" in data.files else "stft"
 
-    x1_tr, x2_tr, y_tr, c_tr = (
+    x1_train, x2_train, y_train, c_train = (
         x_1d[train_mask],
         x_2d[train_mask],
         y[train_mask],
         clinical[train_mask],
+    )
+    x1_val, x2_val, y_val, c_val = (
+        x_1d[val_mask],
+        x_2d[val_mask],
+        y[val_mask],
+        clinical[val_mask],
     )
     x1_te, x2_te, y_te, c_te = (
         x_1d[test_mask],
@@ -102,44 +148,44 @@ def main() -> None:
         clinical[test_mask],
     )
 
-    # Hold out validation from DS1 train patients
-    idx = np.arange(len(y_tr))
-    tr_idx, va_idx = train_test_split(
-        idx, test_size=0.15, random_state=SEED, stratify=y_tr
-    )
     if args.max_train is not None:
-        tr_idx = tr_idx[: args.max_train]
+        x1_train = x1_train[: args.max_train]
+        x2_train = x2_train[: args.max_train]
+        y_train = y_train[: args.max_train]
+        c_train = c_train[: args.max_train]
 
-    x1_train, x2_train, y_train, c_train = (
-        x1_tr[tr_idx],
-        x2_tr[tr_idx],
-        y_tr[tr_idx],
-        c_tr[tr_idx],
-    )
-    x1_val, x2_val, y_val, c_val = (
-        x1_tr[va_idx],
-        x2_tr[va_idx],
-        y_tr[va_idx],
-        c_tr[va_idx],
-    )
+    # Class weights from original train labels (before oversampling)
+    class_weights = None
+    if args.class_weight == "balanced":
+        classes = np.arange(len(class_names))
+        present = np.unique(y_train)
+        w = compute_class_weight("balanced", classes=present, y=y_train)
+        weights = np.ones(len(class_names), dtype=np.float64)
+        for cls, wi in zip(present, w):
+            weights[int(cls)] = wi
+        weights = weights / weights.mean()
+        class_weights = torch.tensor(weights, dtype=torch.float32)
+        print(f"Class weights: {dict(zip(class_names, weights.round(3)))}", flush=True)
 
-    use_balance = USE_SMOTE and not args.no_smote
-    if use_balance:
-        print(f"Balancing training split ({args.balance})...", flush=True)
+    if sampler != "none":
+        print(f"Oversampling train set ({sampler})...", flush=True)
         x1_train, x2_train, c_train, y_train = oversample_balance(
             x1_train,
             x2_train,
             c_train,
             y_train,
-            random_state=SEED,
-            method=args.balance,
+            random_state=args.seed,
+            method=sampler,
+            fs=fs,
+            spectrogram_method=method,
         )
-        print(f"After balance: {len(y_train)} samples", flush=True)
+        print(f"After oversample: {len(y_train)} samples", flush=True)
 
-    clinical_dim = c_train.shape[1] if args.model == "dual" else 0
+    use_clin = _needs_clinical(args.model)
+    clinical_dim = int(c_train.shape[1]) if use_clin else 0
 
     def make_loader(x1, x2, yy, cc, shuffle):
-        clin = cc if clinical_dim > 0 else None
+        clin = cc if use_clin else None
         ds = DualStreamECGDataset(x1, x2, yy, clin)
         return DataLoader(
             ds,
@@ -153,15 +199,17 @@ def main() -> None:
     val_loader = make_loader(x1_val, x2_val, y_val, c_val, False)
     test_loader = make_loader(x1_te, x2_te, y_te, c_te, False)
 
-    # Class weights from (pre-SMOTE) training labels for stability
-    counts = np.bincount(y_tr[tr_idx], minlength=len(class_names)).astype(np.float64)
-    weights = counts.sum() / (counts + 1e-6)
-    weights = weights / weights.mean()
-    class_weights = torch.tensor(weights, dtype=torch.float32)
+    model = build_heartx_model(
+        args.model,
+        num_classes=len(class_names),
+        clinical_dim=clinical_dim,
+        fusion_type=args.fusion,
+    ).to(device)
 
-    model = build_model(args.model, num_classes=len(class_names), clinical_dim=clinical_dim)
-    model = model.to(device)
-    ckpt = CHECKPOINT_DIR / f"heartx_{args.model}.pt"
+    run_name = args.run_name or f"{args.model}_{args.fusion}_{args.loss}_{sampler}"
+    ckpt = CHECKPOINT_DIR / f"heartx_{run_name}.pt"
+    results_dir = OUTPUT_DIR / "results" / run_name
+    fig_dir = FIGURE_DIR / run_name
 
     history = fit(
         model,
@@ -174,43 +222,60 @@ def main() -> None:
         class_names=class_names,
         checkpoint_path=ckpt,
         class_weights=class_weights,
+        loss_name=args.loss,
+        focal_gamma=args.focal_gamma,
     )
 
-    # Load best checkpoint and evaluate on DS2
     state = torch.load(ckpt, map_location=device, weights_only=False)
     model.load_state_dict(state["model_state"])
     test_metrics = evaluate(model, test_loader, device, class_names)
-    print("\n=== Test (DS2) ===")
+    print("\n=== Test (patient-wise) ===")
+    print(f"PRIMARY metric macro-F1={test_metrics['f1_macro']:.4f}")
+    print(f"accuracy={test_metrics['accuracy']:.4f} (secondary)")
     print(test_metrics["report"])
-    print(
-        f"acc={test_metrics['accuracy']:.4f}  "
-        f"f1_macro={test_metrics['f1_macro']:.4f}  "
-        f"recall={test_metrics['recall_macro']:.4f}  "
-        f"specificity={test_metrics['specificity_macro']:.4f}"
-    )
 
-    fig_dir = FIGURE_DIR / args.model
+    # Highlight minority classes when present
+    for rare in ("S", "F", "Q"):
+        if rare in test_metrics["per_class"]:
+            pc = test_metrics["per_class"][rare]
+            print(
+                f"  [{rare}] P={pc['precision']:.3f} R={pc['recall']:.3f} "
+                f"F1={pc['f1']:.3f} n={pc['support']}",
+                flush=True,
+            )
+
     plot_confusion_matrix(
         np.array(test_metrics["confusion_matrix"]),
         class_names,
         fig_dir / "confusion_matrix.png",
-        title=f"HEART-X ({args.model}) — MIT-BIH DS2",
+        title=f"HEART-X {run_name} (macro-F1={test_metrics['f1_macro']:.3f})",
     )
+    save_eval_artifacts(test_metrics, class_names, results_dir, prefix="test")
 
     results = {
+        "run_name": run_name,
         "model": args.model,
+        "fusion": args.fusion,
+        "loss": args.loss,
+        "sampler": sampler,
+        "class_weight": args.class_weight,
         "epochs": args.epochs,
-        "test_accuracy": test_metrics["accuracy"],
+        "seed": args.seed,
+        "primary_metric": "f1_macro",
         "test_f1_macro": test_metrics["f1_macro"],
+        "test_accuracy": test_metrics["accuracy"],
         "test_precision_macro": test_metrics["precision_macro"],
         "test_recall_macro": test_metrics["recall_macro"],
         "test_specificity_macro": test_metrics["specificity_macro"],
+        "per_class": test_metrics["per_class"],
         "history": history,
         "checkpoint": str(ckpt),
     }
-    out_json = CHECKPOINT_DIR / f"results_{args.model}.json"
-    # history values are plain floats already
+    results_dir.mkdir(parents=True, exist_ok=True)
+    out_json = results_dir / "results.json"
     out_json.write_text(json.dumps(results, indent=2))
+    # also keep legacy path
+    (CHECKPOINT_DIR / f"results_{run_name}.json").write_text(json.dumps(results, indent=2))
     print(f"Wrote {out_json}")
 
 

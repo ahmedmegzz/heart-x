@@ -1,0 +1,16 @@
+split,class,count
+train,NORM,185
+train,MI,17
+train,STTC,33
+train,CD,39
+train,HYP,18
+val,NORM,30
+val,MI,8
+val,STTC,2
+val,CD,12
+val,HYP,2
+test,NORM,30
+test,MI,4
+test,STTC,7
+test,CD,9
+test,HYP,4

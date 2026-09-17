@@ -18,6 +18,7 @@ OUTPUT_DIR = PROJECT_ROOT / "outputs"
 PROCESSED_DIR = OUTPUT_DIR / "processed"
 CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 FIGURE_DIR = OUTPUT_DIR / "figures"
+RESULTS_DIR = OUTPUT_DIR / "results"
 
 # ---------------------------------------------------------------------------
 # Signal processing

@@ -1,14 +1,21 @@
 {
-  "n_beats": 109436,
+  "n_beats": 14377,
   "class_counts": {
-    "N": 90581,
-    "S": 2780,
-    "V": 7235,
-    "F": 802,
-    "Q": 8038
+    "N": 12115,
+    "S": 279,
+    "V": 865,
+    "F": 82,
+    "Q": 1036
   },
-  "n_train": 59748,
-  "n_test": 49688,
+  "n_train": 6587,
+  "n_val": 1198,
+  "n_test": 6592,
+  "n_train_groups": 22,
+  "n_val_groups": 4,
+  "n_test_groups": 22,
+  "missing_test_classes": [
+    "Q"
+  ],
   "method": "stft",
   "fs": 360,
   "signal_len": 360,
@@ -16,5 +23,6 @@
     64,
     64
   ],
-  "clinical_dim": 8
+  "clinical_dim": 8,
+  "split": "patient_wise_chazal_ds2_test"
 }

@@ -1,4 +1,13 @@
-"""Balance helpers and deterministic seeding."""
+"""Balance helpers and deterministic seeding.
+
+SMOTE policy (thesis-critical)
+------------------------------
+``method='smote'`` interpolates in the **1D waveform (+ clinical)** feature
+space only. Spectrogram inputs for synthetic samples are **recomputed** from
+the synthetic 1D signal via STFT (or CWT), so the 1D/2D pair stays physically
+consistent. We do **not** run SMOTE independently in spectrogram pixel space,
+which would break signal–spectrogram alignment.
+"""
 
 from __future__ import annotations
 
@@ -23,15 +32,23 @@ def oversample_balance(
     y: np.ndarray,
     random_state: int = 42,
     method: str = "random",
+    fs: float = 360.0,
+    spectrogram_method: str = "stft",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Balance classes by resampling indices (keeps 1D/2D pairs aligned).
+    Balance classes while keeping dual-stream modalities aligned.
 
-    method='random' uses RandomOverSampler (fast, recommended).
-    method='smote' runs SMOTE in a compact 1D+clinical space and copies
-    nearest-neighbor spectrograms for synthetic rows.
+    Parameters
+    ----------
+    method :
+        - ``random`` / ``random_oversample``: duplicate minority indices
+          (1D, 2D, clinical copied together).
+        - ``smote``: SMOTE on flattened 1D (+ clinical). Synthetic 1D rows are
+          taken from SMOTE output; spectrograms are regenerated from those
+          synthetic waveforms (see module docstring).
     """
-    if method == "random":
+    method = method.lower()
+    if method in {"random", "random_oversample", "ros"}:
         from imblearn.over_sampling import RandomOverSampler
 
         idx = np.arange(len(y)).reshape(-1, 1)
@@ -40,9 +57,12 @@ def oversample_balance(
         src = idx_res[:, 0]
         return x_1d[src], x_2d[src], clinical[src], y_res.astype(np.int64)
 
-    # Compact SMOTE path
+    if method != "smote":
+        raise ValueError(f"Unknown oversample method: {method}")
+
     from imblearn.over_sampling import SMOTE
-    from sklearn.neighbors import NearestNeighbors
+
+    from heartx.features.spectrogram import cwt_scalogram, stft_spectrogram
 
     n = len(y)
     counts = np.bincount(y)
@@ -51,25 +71,29 @@ def oversample_balance(
     if k < 1:
         return x_1d, x_2d, clinical, y
 
+    # --- SMOTE in 1D (+ clinical) space ---
     x1_flat = x_1d.reshape(n, -1)
-    compact = np.concatenate([x1_flat[:, ::4], clinical], axis=1).astype(np.float32)
-    sampler = SMOTE(random_state=random_state, k_neighbors=k)
-    compact_res, y_res = sampler.fit_resample(compact, y)
-
-    nn = NearestNeighbors(n_neighbors=1).fit(compact)
-    _, idxs = nn.kneighbors(compact_res)
-    src = idxs[:, 0]
     c_dim = clinical.shape[1]
-    clin_out = compact_res[:, -c_dim:].astype(np.float32)
-    return (
-        x_1d[src].astype(np.float32),
-        x_2d[src].astype(np.float32),
-        clin_out,
-        y_res.astype(np.int64),
-    )
+    feat = np.concatenate([x1_flat, clinical], axis=1).astype(np.float32)
+    sampler = SMOTE(random_state=random_state, k_neighbors=k)
+    feat_res, y_res = sampler.fit_resample(feat, y)
+
+    t = x1_flat.shape[1]
+    x1_out = feat_res[:, :t].reshape(-1, *x_1d.shape[1:]).astype(np.float32)
+    clin_out = feat_res[:, t : t + c_dim].astype(np.float32)
+
+    # --- Regenerate spectrograms from (possibly synthetic) 1D ---
+    transform = stft_spectrogram if spectrogram_method == "stft" else cwt_scalogram
+    specs = []
+    flat_1d = x1_out.reshape(len(x1_out), -1)
+    for i in range(len(flat_1d)):
+        specs.append(transform(flat_1d[i], fs=fs))
+    x2_out = np.stack(specs, axis=0)[:, None, :, :].astype(np.float32)
+
+    return x1_out, x2_out, clin_out, y_res.astype(np.int64)
 
 
-# Backward-compatible alias
 def smote_balance(*args, **kwargs):
+    """Backward-compatible alias; defaults to random oversampling. """
     kwargs.setdefault("method", "random")
     return oversample_balance(*args, **kwargs)

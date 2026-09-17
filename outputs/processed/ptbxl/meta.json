@@ -1,14 +1,20 @@
 {
-  "n": 500,
+  "n": 400,
   "class_counts": {
-    "NORM": 292,
-    "MI": 40,
-    "STTC": 53,
-    "CD": 84,
-    "HYP": 31
+    "NORM": 245,
+    "MI": 29,
+    "STTC": 42,
+    "CD": 60,
+    "HYP": 24
   },
-  "n_train": 432,
-  "n_test": 68,
+  "n_train": 292,
+  "n_val": 54,
+  "n_test": 54,
+  "n_train_groups": 279,
+  "n_val_groups": 50,
+  "n_test_groups": 47,
+  "missing_test_classes": [],
   "method": "stft",
-  "fs": 100
+  "fs": 100,
+  "split": "patient_wise_fold10_test"
 }

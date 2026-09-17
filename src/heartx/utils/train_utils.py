@@ -1,4 +1,4 @@
-"""Training and evaluation helpers."""
+"""Training and evaluation helpers (macro-F1 primary metric)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.metrics import (
@@ -13,16 +14,18 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     f1_score,
+    precision_recall_fscore_support,
     precision_score,
     recall_score,
 )
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+
+from heartx.utils.losses import build_criterion
 
 
 def _batch_inputs(batch: dict, device: torch.device):
-    x_1d = batch["x_1d"].to(device)
-    x_2d = batch["x_2d"].to(device)
+    x_1d = batch["x_1d"].to(device) if "x_1d" in batch else None
+    x_2d = batch["x_2d"].to(device) if "x_2d" in batch else None
     y = batch["y"].to(device)
     clinical = batch["clinical"].to(device) if "clinical" in batch else None
     return x_1d, x_2d, y, clinical
@@ -46,32 +49,48 @@ def evaluate(
 
     y_true = np.concatenate(ys)
     y_pred = np.concatenate(preds)
+    labels = list(range(len(class_names))) if class_names else None
 
-    # Specificity (macro): TN / (TN + FP) per class
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
     specificity = []
     for i in range(cm.shape[0]):
         tn = cm.sum() - (cm[i, :].sum() + cm[:, i].sum() - cm[i, i])
         fp = cm[:, i].sum() - cm[i, i]
-        specificity.append(tn / (tn + fp + 1e-8))
+        specificity.append(float(tn / (tn + fp + 1e-8)))
+
+    p, r, f1, support = precision_recall_fscore_support(
+        y_true, y_pred, labels=labels, zero_division=0
+    )
+    per_class = {}
+    if class_names is not None:
+        for i, name in enumerate(class_names):
+            per_class[name] = {
+                "precision": float(p[i]),
+                "recall": float(r[i]),
+                "f1": float(f1[i]),
+                "support": int(support[i]),
+                "specificity": specificity[i] if i < len(specificity) else 0.0,
+            }
 
     metrics = {
         "accuracy": float(accuracy_score(y_true, y_pred)),
-        "f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+        "f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0, labels=labels)),
         "f1_weighted": float(
-            f1_score(y_true, y_pred, average="weighted", zero_division=0)
+            f1_score(y_true, y_pred, average="weighted", zero_division=0, labels=labels)
         ),
         "precision_macro": float(
-            precision_score(y_true, y_pred, average="macro", zero_division=0)
+            precision_score(y_true, y_pred, average="macro", zero_division=0, labels=labels)
         ),
         "recall_macro": float(
-            recall_score(y_true, y_pred, average="macro", zero_division=0)
+            recall_score(y_true, y_pred, average="macro", zero_division=0, labels=labels)
         ),
         "specificity_macro": float(np.mean(specificity)) if specificity else 0.0,
+        "per_class": per_class,
         "confusion_matrix": cm.tolist(),
         "report": classification_report(
             y_true,
             y_pred,
+            labels=labels,
             target_names=class_names,
             zero_division=0,
             digits=4,
@@ -80,6 +99,24 @@ def evaluate(
         "y_pred": y_pred,
     }
     return metrics
+
+
+def save_eval_artifacts(
+    metrics: dict[str, Any],
+    class_names: list[str],
+    out_dir: Path,
+    prefix: str = "test",
+) -> None:
+    """Write confusion matrix CSV and per-class metrics CSV."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cm = np.asarray(metrics["confusion_matrix"])
+    pd.DataFrame(cm, index=class_names, columns=class_names).to_csv(
+        out_dir / f"{prefix}_confusion_matrix.csv"
+    )
+    if metrics.get("per_class"):
+        rows = [{"class": k, **v} for k, v in metrics["per_class"].items()]
+        pd.DataFrame(rows).to_csv(out_dir / f"{prefix}_per_class_metrics.csv", index=False)
 
 
 def train_one_epoch(
@@ -115,10 +152,14 @@ def fit(
     class_names: list[str],
     checkpoint_path: Path,
     class_weights: torch.Tensor | None = None,
+    loss_name: str = "ce",
+    focal_gamma: float = 2.0,
 ) -> dict[str, Any]:
-    criterion = nn.CrossEntropyLoss(
-        weight=class_weights.to(device) if class_weights is not None else None
-    )
+    """Train with **macro-F1** as the checkpoint / LR-scheduler criterion."""
+    criterion = build_criterion(loss_name, class_weights, focal_gamma=focal_gamma)
+    if hasattr(criterion, "to"):
+        criterion = criterion.to(device)
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", factor=0.5, patience=2
@@ -138,7 +179,8 @@ def fit(
         print(
             f"Epoch {epoch:02d}/{epochs}  "
             f"loss={loss:.4f}  val_acc={val_metrics['accuracy']:.4f}  "
-            f"val_f1={val_metrics['f1_macro']:.4f}"
+            f"val_macroF1={val_metrics['f1_macro']:.4f}",
+            flush=True,
         )
         if val_metrics["f1_macro"] > best_f1:
             best_f1 = val_metrics["f1_macro"]
@@ -146,11 +188,13 @@ def fit(
                 {
                     "model_state": model.state_dict(),
                     "epoch": epoch,
-                    "val_f1": best_f1,
+                    "val_f1_macro": best_f1,
+                    "val_accuracy": val_metrics["accuracy"],
                     "class_names": class_names,
+                    "primary_metric": "f1_macro",
                 },
                 checkpoint_path,
             )
-            print(f"  saved checkpoint -> {checkpoint_path}")
+            print(f"  saved best macro-F1={best_f1:.4f} -> {checkpoint_path}", flush=True)
 
     return history

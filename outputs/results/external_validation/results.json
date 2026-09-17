@@ -1,0 +1,14 @@
+{
+  "checkpoint": "outputs/checkpoints/heartx_smoke_gated.pt",
+  "mitbih": {
+    "f1_macro": 0.5793076449943142,
+    "accuracy": 0.7298240291262136,
+    "report": "              precision    recall  f1-score   support\n\n      normal     0.9536    0.7362    0.8309      5945\n    abnormal     0.2168    0.6708    0.3277       647\n\n    accuracy                         0.7298      6592\n   macro avg     0.5852    0.7035    0.5793      6592\nweighted avg     0.8813    0.7298    0.7815      6592\n"
+  },
+  "ptbxl": {
+    "f1_macro": 0.5249266862170088,
+    "accuracy": 0.6111111111111112,
+    "report": "              precision    recall  f1-score   support\n\n      normal     0.5957    0.9333    0.7273        30\n    abnormal     0.7143    0.2083    0.3226        24\n\n    accuracy                         0.6111        54\n   macro avg     0.6550    0.5708    0.5249        54\nweighted avg     0.6484    0.6111    0.5474        54\n"
+  },
+  "mapping": "MIT-BIH AAMI -> proxy:\n  N -> normal\n  S -> abnormal\n  V -> abnormal\n  F -> abnormal\n  Q -> abnormal\nPTB-XL superclass -> proxy:\n  NORM -> normal\n  MI -> abnormal\n  STTC -> abnormal\n  CD -> abnormal\n  HYP -> abnormal\n\nLimitation: beat-level arrhythmia classes cannot be mapped 1:1 onto\nPTB-XL diagnostic superclasses; evaluation is binary normal/abnormal proxy."
+}

@@ -60,7 +60,7 @@ def cwt_scalogram(
     return _resize2d(mag, size)
 
 
-def make_dual_representations(
+def make_dual_reps(
     signals: np.ndarray,
     fs: float,
     method: str = "stft",
@@ -94,3 +94,6 @@ def make_dual_representations(
     x_1d = signals[:, None, :].astype(np.float32)
     x_2d = np.stack(specs, axis=0)[:, None, :, :].astype(np.float32)
     return x_1d, x_2d
+
+# Backward-compatible alias
+make_dual_representations = make_dual_reps
