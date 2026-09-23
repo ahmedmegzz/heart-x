@@ -43,9 +43,9 @@ def oversample_balance(
     method :
         - ``random`` / ``random_oversample``: duplicate minority indices
           (1D, 2D, clinical copied together).
-        - ``smote``: SMOTE on flattened 1D (+ clinical). Synthetic 1D rows are
-          taken from SMOTE output; spectrograms are regenerated from those
-          synthetic waveforms (see module docstring).
+        - ``smote``: SMOTE on flattened 1D (+ clinical). Original rows keep
+          their spectrograms; only **synthetic** 1D rows get a newly computed
+          spectrogram (see module docstring).
     """
     method = method.lower()
     if method in {"random", "random_oversample", "ros"}:
@@ -61,6 +61,7 @@ def oversample_balance(
         raise ValueError(f"Unknown oversample method: {method}")
 
     from imblearn.over_sampling import SMOTE
+    from sklearn.neighbors import NearestNeighbors
 
     from heartx.features.spectrogram import cwt_scalogram, stft_spectrogram
 
@@ -71,7 +72,6 @@ def oversample_balance(
     if k < 1:
         return x_1d, x_2d, clinical, y
 
-    # --- SMOTE in 1D (+ clinical) space ---
     x1_flat = x_1d.reshape(n, -1)
     c_dim = clinical.shape[1]
     feat = np.concatenate([x1_flat, clinical], axis=1).astype(np.float32)
@@ -82,15 +82,26 @@ def oversample_balance(
     x1_out = feat_res[:, :t].reshape(-1, *x_1d.shape[1:]).astype(np.float32)
     clin_out = feat_res[:, t : t + c_dim].astype(np.float32)
 
-    # --- Regenerate spectrograms from (possibly synthetic) 1D ---
-    transform = stft_spectrogram if spectrogram_method == "stft" else cwt_scalogram
-    specs = []
-    flat_1d = x1_out.reshape(len(x1_out), -1)
-    for i in range(len(flat_1d)):
-        specs.append(transform(flat_1d[i], fs=fs))
-    x2_out = np.stack(specs, axis=0)[:, None, :, :].astype(np.float32)
+    # Map each resampled row to nearest original → reuse spectrogram when identical
+    nn = NearestNeighbors(n_neighbors=1).fit(feat)
+    _, idxs = nn.kneighbors(feat_res)
+    src = idxs[:, 0]
+    # Rows whose compact features match an original exactly (distance ~0) keep x2
+    # Synthetic rows: regenerate spectrogram from synthetic 1D
+    dists, _ = nn.kneighbors(feat_res)
+    is_original = dists[:, 0] < 1e-6
 
-    return x1_out, x2_out, clin_out, y_res.astype(np.int64)
+    x2_out = np.empty((len(x1_out), *x_2d.shape[1:]), dtype=np.float32)
+    x2_out[is_original] = x_2d[src[is_original]].astype(np.float32)
+
+    transform = stft_spectrogram if spectrogram_method == "stft" else cwt_scalogram
+    synth_idx = np.where(~is_original)[0]
+    flat_1d = x1_out.reshape(len(x1_out), -1)
+    for i in synth_idx:
+        spec = transform(flat_1d[i], fs=fs)
+        x2_out[i, 0] = spec.astype(np.float32)
+
+    return x1_out, x2_out.astype(np.float16), clin_out, y_res.astype(np.int64)
 
 
 def smote_balance(*args, **kwargs):

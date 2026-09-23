@@ -1,20 +1,26 @@
 {
-  "n_beats": 14377,
+  "n_beats": 99062,
   "class_counts": {
-    "N": 12115,
-    "S": 279,
-    "V": 865,
-    "F": 82,
-    "Q": 1036
+    "N": 88540,
+    "S": 2749,
+    "V": 6961,
+    "F": 797,
+    "Q": 15
   },
-  "n_train": 6587,
-  "n_val": 1198,
-  "n_test": 6592,
-  "n_train_groups": 22,
+  "n_train": 39170,
+  "n_val": 10204,
+  "n_test": 49688,
+  "n_train_groups": 17,
   "n_val_groups": 4,
   "n_test_groups": 22,
-  "missing_test_classes": [
-    "Q"
+  "missing_test_classes": [],
+  "missing_val_classes": [],
+  "q_note": "",
+  "excluded_pacemaker": [
+    "102",
+    "104",
+    "107",
+    "217"
   ],
   "method": "stft",
   "fs": 360,
@@ -24,5 +30,12 @@
     64
   ],
   "clinical_dim": 8,
-  "split": "patient_wise_chazal_ds2_test"
+  "split": "chazal_ds2_test_ds1_train_val",
+  "max_beats_per_record": null,
+  "protocol_notes": [
+    "Excluded pacemaker records 102, 104, 107, 217",
+    "DS2 used only as test",
+    "Train/val split patient-wise within DS1 only",
+    "All AAMI beats used unless --max-beats-per-record set"
+  ]
 }

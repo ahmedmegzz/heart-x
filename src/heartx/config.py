@@ -96,7 +96,9 @@ TEST_RATIO = 0.15
 USE_SMOTE = True
 MAX_BEATS_PER_CLASS = None  # set e.g. 5000 for quick experiments
 
-# Inter-patient split (DS1 / DS2) commonly used for MIT-BIH
+# Inter-patient split (de Chazal / Chazal-style DS1 / DS2)
+# Pacemaker recordings are excluded from the entire study set.
+MITBIH_EXCLUDE_PACEMAKER = ["102", "104", "107", "217"]
 MITBIH_DS1 = [
     "101",
     "106",
@@ -144,3 +146,5 @@ MITBIH_DS2 = [
     "233",
     "234",
 ]
+# Default multi-seed suite for advisor-requested robustness
+EXPERIMENT_SEEDS = [42, 43, 44]

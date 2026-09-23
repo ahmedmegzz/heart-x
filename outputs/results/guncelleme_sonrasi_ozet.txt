@@ -1,0 +1,80 @@
+HEART-X — Güncelleme Sonrası Sonuç Özeti
+==========================================
+
+
+1) Veri / patient-wise split (MIT-BIH, max 300 atım/kayıt)
+----------------------------------------------------------
+Toplam atım          : 14.377
+Split protokolü      : Chazal DS2 = test; DS1(+diğer) → GroupShuffleSplit train/val
+
+                 Train      Val       Test
+Örnek            6.587      1.198     6.592
+Kayıt (hasta)    22         4         22
+
+Sınıf dağılımı (adet):
+  class   train   val    test
+  N       5059    1111   5945
+  S         44       7    228
+  V        407      74    384
+  F         41       6     35
+  Q       1036       0      0
+
+
+2) Ana model — dual + gated fusion (smoke_gated)
+-------------------------------------------------
+Ayarlar:
+  model         : dual
+  fusion        : gated
+  loss          : ce
+  class-weight  : balanced
+  sampler       : none
+  epochs        : 3
+  seed          : 42
+  primary metric: macro-F1
+
+Test metrikleri:
+  Macro-F1 (birincil) : 0.355
+  Accuracy            : 0.722
+  Precision (macro)   : 0.367
+  Recall (macro)      : 0.455
+  Specificity (macro) : 0.884
+
+Sınıf bazlı F1:
+  N : 0.831   (P=0.954, R=0.736, n=5945)
+  V : 0.781   (P=0.783, R=0.779, n=384)
+  S : 0.116   (P=0.072, R=0.303, n=228)
+  F : 0.049   (P=0.026, R=0.457, n=35)
+  Q : —       (testte örnek yok)
+
+Checkpoint: outputs/checkpoints/heartx_smoke_gated.pt
+Detay:     outputs/results/smoke_gated/
+
+
+3) Dış doğrulama (binary normal / abnormal proxy)
+-------------------------------------------------
+MIT-BIH AAMI ↔ PTB-XL superclass birebir eşleşmez; binary proxy kullanıldı.
+  NORM ↔ normal; diğerleri ↔ abnormal
+
+                        Macro-F1   Accuracy
+  MIT-BIH iç test       0.579      0.730
+  PTB-XL dış test       0.525      0.611
+
+Detay: outputs/results/external_validation/
+
+
+4) Güncelleme öncesi ile kabaca karşılaştırma
+---------------------------------------------
+Önceki (oversample, 8 epoch, eski split):
+  Accuracy ≈ 0.70 , Macro-F1 ≈ 0.34
+
+Şimdi (patient-wise + gated, 3 epoch smoke):
+  Accuracy ≈ 0.72 , Macro-F1 ≈ 0.36
+
+Azınlık sınıflar (S, F) hâlâ zayıf. Daha uzun eğitim ve
+run_ablation.py / run_imbalance_experiments.py gerekir.
+
+
+5) Sonraki adımlar (öneri)
+--------------------------
+  python scripts/run_ablation.py --epochs 8
+  python scripts/run_imbalance_experiments.py --epochs 6

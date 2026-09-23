@@ -1,0 +1,31 @@
+HEART-X — Düzeltilmiş Train/Val/Test Dağılımı (Chazal)
+============================================================
+Protokol:
+  - Excluded pacemaker records 102, 104, 107, 217
+  - DS2 used only as test
+  - Train/val split patient-wise within DS1 only
+  - All AAMI beats used unless --max-beats-per-record set
+Hariç tutulan pacemaker: ['102', '104', '107', '217']
+
+Toplam atım: 99062 (tüm uygun AAMI atımları; kayıt başı limit YOK)
+Train: 39170 atım / 17 DS1 kayıt
+Val:   10204 atım / 4 DS1 kayıt
+Test:  49688 atım / 22 DS2 kayıt
+
+Sınıf dağılımı (adet):
+split   test  train   val
+class                    
+F        388     36   373
+N      44236  36161  8143
+Q          7      4     4
+S       1837    904     8
+V       3220   2065  1676
+
+Q sınıfı notu:
+  Önceki smoke testte (max 300 atım/kayıt) Q testte yoktu.
+  Tüm atımlar + paced hariç ile Q: train/val/testte mevcut.
+  Toplam Q=15; missing_test=[]; missing_val=[]
+
+train kayıtları (17): 108, 109, 112, 114, 115, 116, 118, 119, 122, 201, 203, 205, 207, 209, 220, 223, 230
+val kayıtları (4): 101, 106, 208, 215
+test kayıtları (22): 100, 103, 105, 111, 113, 117, 121, 123, 200, 202, 210, 212, 213, 214, 219, 221, 222, 228, 231, 232, 233, 234

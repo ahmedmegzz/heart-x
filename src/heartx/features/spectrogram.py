@@ -92,7 +92,8 @@ def make_dual_reps(
         specs.append(transform(signals[i], fs=fs))
 
     x_1d = signals[:, None, :].astype(np.float32)
-    x_2d = np.stack(specs, axis=0)[:, None, :, :].astype(np.float32)
+    # float16 spectrograms: halves disk/RAM for large MIT-BIH runs
+    x_2d = np.stack(specs, axis=0)[:, None, :, :].astype(np.float16)
     return x_1d, x_2d
 
 # Backward-compatible alias

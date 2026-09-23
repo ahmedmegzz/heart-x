@@ -154,18 +154,20 @@ def main() -> None:
         y_train = y_train[: args.max_train]
         c_train = c_train[: args.max_train]
 
-    # Class weights from original train labels (before oversampling)
+    # Class weights from original train labels (before oversampling).
+    # Use sqrt(balanced) + clip so majority class is not crushed to ~0 when Q is tiny.
     class_weights = None
     if args.class_weight == "balanced":
-        classes = np.arange(len(class_names))
         present = np.unique(y_train)
         w = compute_class_weight("balanced", classes=present, y=y_train)
         weights = np.ones(len(class_names), dtype=np.float64)
         for cls, wi in zip(present, w):
             weights[int(cls)] = wi
+        weights = np.sqrt(weights)
         weights = weights / weights.mean()
+        weights = np.clip(weights, 0.25, 10.0)
         class_weights = torch.tensor(weights, dtype=torch.float32)
-        print(f"Class weights: {dict(zip(class_names, weights.round(3)))}", flush=True)
+        print(f"Class weights: {dict(zip(class_names, np.round(weights, 3)))}", flush=True)
 
     if sampler != "none":
         print(f"Oversampling train set ({sampler})...", flush=True)

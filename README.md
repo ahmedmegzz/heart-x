@@ -18,37 +18,28 @@ Data:
 - `data/mit-bih-arrhythmia-database-1.0.0/`
 - `data/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/`
 
-## Pipeline overview
+## MIT-BIH protocol (Chazal / advisor-aligned)
 
-| Stage | Code |
-|------|------|
-| Patient-wise split + class reports | `src/heartx/data/patient_split.py`, `class_report.py` |
-| 1D + STFT/CWT dual reps | `src/heartx/features/spectrogram.py` |
-| CNN-LSTM + fusion (`concat`/`gated`/`attention`) | `src/heartx/models/` |
-| MM-GradCAM | `src/heartx/xai/mm_gradcam.py` |
-| Train (macro-F1 primary) | `scripts/train_heartx.py` |
-
-## Prepare data (patient-wise)
+1. Exclude pacemaker recordings: **102, 104, 107, 217**
+2. Keep only DS1 ∪ DS2
+3. **DS2 = test only**
+4. **Train/val** split patient-wise **within DS1 only**
+5. Use **all** annotated AAMI beats (no per-record cap for final runs)
 
 ```bash
+python scripts/prepare_mitbih.py --method stft
+# optional smoke only:
 python scripts/prepare_mitbih.py --max-beats-per-record 500
-python scripts/prepare_ptbxl.py --max-records 2000
-```
-
-Writes `train_mask` / `val_mask` / `test_mask`, `class_distribution.csv|png`, and unique patient/record counts under `outputs/processed/`.
-
-MIT-BIH: Chazal DS2 = test; DS1(+others) → GroupShuffleSplit train/val.  
-PTB-XL: fold-10 patients = test; remaining patients → train/val.
-
-```bash
-python -m pytest tests/test_patient_split.py -q
+python -m pytest tests/test_patient_split.py tests/test_chazal_protocol.py -q
 ```
 
 ## Train
 
+Primary metric: **macro-F1** (accuracy is secondary).
+
 ```bash
 python scripts/train_heartx.py \
-  --model dual \
+  --model 1d_2d_clinical \
   --fusion gated \
   --loss focal \
   --class-weight balanced \
@@ -56,54 +47,41 @@ python scripts/train_heartx.py \
   --epochs 10
 ```
 
-Key CLI:
+| Flag | Values |
+|------|--------|
+| `--model` | `1d`, `2d`, `clinical`, `1d_2d`, `1d_clinical`, `2d_clinical`, `1d_2d_clinical` / `dual` |
+| `--fusion` | `concat`, `gated`, `attention` |
+| `--loss` | `ce`, `focal` |
+| `--class-weight` | `none`, `balanced` |
+| `--sampler` | `none`, `random_oversample`, `smote` (1D+clinical SMOTE; spectrogram regenerated) |
 
-| Flag | Values | Notes |
-|------|--------|-------|
-| `--model` | `1d`, `2d`, `clinical`, `1d_2d`, `1d_clinical`, `2d_clinical`, `dual` / `1d_2d_clinical`, `dual_noclinical` | Ablation building blocks |
-| `--fusion` | `concat` (default), `gated`, `attention` | Feature-level fusion |
-| `--loss` | `ce`, `focal` | |
-| `--class-weight` | `none`, `balanced` | |
-| `--sampler` | `none`, `random_oversample`, `smote` | SMOTE: 1D(+clinical) then **regenerate** spectrogram from synthetic 1D |
+## Advisor experiment suite (multi-seed)
 
-Checkpoint selection and LR schedule use **macro-F1** (accuracy is secondary).
-
-### Fusion weight analysis
+Runs ablation + fusion comparison + imbalance matrix over seeds, then writes mean±std tables:
 
 ```bash
-python scripts/analyze_fusion_weights.py \
-  --checkpoint outputs/checkpoints/heartx_<run>.pt \
-  --fusion gated
+python scripts/run_advisor_suite.py --epochs 8 --seeds 42 43 44
+# faster subset:
+python scripts/run_advisor_suite.py --epochs 5 --quick --seeds 42 43 44
 ```
 
-## Experiment runners
+Individual runners:
 
 ```bash
-# 7-way modality ablation
 python scripts/run_ablation.py --epochs 8
-
-# Imbalance matrix → outputs/results/imbalance_comparison.csv
+python scripts/run_fusion_comparison.py --epochs 8
 python scripts/run_imbalance_experiments.py --epochs 6
-# or smaller:
-python scripts/run_imbalance_experiments.py --quick --epochs 3
-
-# External validation (binary normal/abnormal proxy MIT-BIH ↔ PTB-XL)
-python scripts/external_validation.py --checkpoint outputs/checkpoints/heartx_<run>.pt
-```
-
-## Explainability
-
-```bash
-python scripts/explain_mm_gradcam.py
+python scripts/analyze_fusion_weights.py --checkpoint outputs/checkpoints/<run>.pt --fusion gated
+python scripts/external_validation.py --checkpoint outputs/checkpoints/<run>.pt
 ```
 
 ## Outputs
 
-- `outputs/processed/` — npz, class distributions  
-- `outputs/checkpoints/` — best macro-F1 weights  
-- `outputs/results/` — per-run metrics, ablation / imbalance / external tables  
-- `outputs/figures/` — confusion matrices, ablation plot, fusion weights, Grad-CAM  
+- `outputs/processed/mitbih/` — npz, `class_distribution.csv|png`, `meta.json`
+- `outputs/results/advisor_suite/` — raw + mean±std CSVs, `advisor_summary.txt`
+- `outputs/results/duzeltilmis_dagilim.txt` — corrected split report
+- `outputs/figures/` — plots / confusion matrices / Grad-CAM
 
-## SMOTE policy (important)
+## SMOTE policy
 
-SMOTE interpolates in **1D waveform + clinical** space only. Spectrogram inputs for synthetic samples are **recomputed via STFT/CWT** from the synthetic 1D signal so the dual streams stay physically consistent. Independent SMOTE in spectrogram pixel space is intentionally avoided.
+SMOTE interpolates in **1D + clinical** space. Spectrograms for synthetic rows are **recomputed from synthetic 1D** (not independent 2D SMOTE).

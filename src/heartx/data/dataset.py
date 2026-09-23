@@ -15,6 +15,7 @@ class DualStreamECGDataset(Dataset):
         y: np.ndarray,
         clinical: np.ndarray | None = None,
     ):
+        # Keep as float32 views; callers may pass float16 spectrograms to save RAM
         self.x_1d = torch.from_numpy(np.asarray(x_1d, dtype=np.float32))
         self.x_2d = torch.from_numpy(np.asarray(x_2d, dtype=np.float32))
         self.y = torch.from_numpy(np.asarray(y, dtype=np.int64))
