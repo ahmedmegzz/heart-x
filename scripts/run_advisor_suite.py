@@ -290,6 +290,70 @@ def main() -> None:
     print("\n".join(lines))
     print(f"\nWrote {summary_path}")
 
+    # ---- Pick final model & run external / XAI ----
+    final_fusion = "concat"
+    final_seed = args.seeds[0]
+    if (out_dir / "fusion_mean_std.csv").exists():
+        fu = pd.read_csv(out_dir / "fusion_mean_std.csv")
+        final_fusion = str(fu.iloc[0]["fusion"])
+    # Prefer seed with best raw fusion F1 for that fusion type
+    if (out_dir / "fusion_raw.csv").exists():
+        fr = pd.read_csv(out_dir / "fusion_raw.csv")
+        sub = fr[fr["fusion"] == final_fusion]
+        if len(sub):
+            best_row = sub.loc[sub["f1_macro"].idxmax()]
+            final_seed = int(best_row["seed"])
+    ckpt = ROOT / "outputs" / "checkpoints" / f"heartx_suite_fusion_{final_fusion}_seed{final_seed}.pt"
+    lines_final = [
+        "",
+        "=== Final model selection ===",
+        f"fusion={final_fusion}  seed={final_seed}",
+        f"checkpoint={ckpt}",
+    ]
+    print("\n".join(lines_final), flush=True)
+    (out_dir / "final_model.txt").write_text("\n".join(lines_final) + "\n")
+
+    if ckpt.exists():
+        env = _env()
+        # Fusion weight analysis
+        cmd_fw = [
+            str(_py()), str(ROOT / "scripts" / "analyze_fusion_weights.py"),
+            "--data", str(args.data),
+            "--checkpoint", str(ckpt),
+            "--model", "1d_2d_clinical",
+            "--fusion", final_fusion,
+            "--num-samples", "64",
+            "--out-dir", str(FIGURE_DIR / "fusion_weights_final"),
+        ]
+        print("\n>>>", " ".join(cmd_fw), flush=True)
+        subprocess.run(cmd_fw, check=False, cwd=str(ROOT), env=env)
+
+        # External validation (proxy / supplementary)
+        cmd_ext = [
+            str(_py()), str(ROOT / "scripts" / "external_validation.py"),
+            "--mitbih-data", str(args.data),
+            "--checkpoint", str(ckpt),
+            "--model", "1d_2d_clinical",
+            "--fusion", final_fusion,
+        ]
+        print("\n>>>", " ".join(cmd_ext), flush=True)
+        subprocess.run(cmd_ext, check=False, cwd=str(ROOT), env=env)
+
+        # MM-GradCAM
+        cmd_xai = [
+            str(_py()), str(ROOT / "scripts" / "explain_mm_gradcam.py"),
+            "--data", str(args.data),
+            "--checkpoint", str(ckpt),
+            "--model", "1d_2d_clinical",
+            "--fusion", final_fusion,
+            "--num-samples", "8",
+            "--out-dir", str(FIGURE_DIR / "mm_gradcam_final"),
+        ]
+        print("\n>>>", " ".join(cmd_xai), flush=True)
+        subprocess.run(cmd_xai, check=False, cwd=str(ROOT), env=env)
+    else:
+        print(f"WARNING: final checkpoint missing: {ckpt}", flush=True)
+
 
 if __name__ == "__main__":
     main()
