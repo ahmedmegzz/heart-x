@@ -1,8 +1,8 @@
 HEART-X advisor suite — live progress
 =====================================
-2026-10-13 00:53:31.968360
-completed_runs: 53 / ~57
-current: suite_imb_cw-balanced_loss-ce_samp-random_oversample_seed44
-last_finished: /home/kimbra/Documents/GitHub/tez/outputs/results/suite_imb_cw-none_loss-ce_samp-random_oversample_seed44/results.json
+2026-10-13 09:02:16.660661
+completed_runs: 57 / ~57
+current: (between runs)
+last_finished: /home/kimbra/Documents/GitHub/tez/outputs/results/suite_imb_cw-balanced_loss-focal_samp-random_oversample_seed44/results.json
 
 Monitor: tail -f outputs/results/advisor_suite/suite.log

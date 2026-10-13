@@ -1,0 +1,4 @@
+
+=== Final model selection ===
+fusion=attention  seed=44
+checkpoint=/home/kimbra/Documents/GitHub/tez/outputs/checkpoints/heartx_suite_fusion_attention_seed44.pt
