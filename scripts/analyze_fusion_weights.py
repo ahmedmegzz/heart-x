@@ -59,9 +59,10 @@ def main() -> None:
     weights = []
     with torch.no_grad():
         for i in range(len(y)):
-            t1 = torch.from_numpy(x_1d[i : i + 1]).to(device)
-            t2 = torch.from_numpy(x_2d[i : i + 1]).to(device)
-            tc = torch.from_numpy(clinical[i : i + 1]).to(device)
+            # Spectrograms may be float16 on disk; model weights are float32.
+            t1 = torch.from_numpy(np.asarray(x_1d[i : i + 1], dtype=np.float32)).to(device)
+            t2 = torch.from_numpy(np.asarray(x_2d[i : i + 1], dtype=np.float32)).to(device)
+            tc = torch.from_numpy(np.asarray(clinical[i : i + 1], dtype=np.float32)).to(device)
             _ = model(t1, t2, tc)
             w = model.fusion_weights()
             if w is None:

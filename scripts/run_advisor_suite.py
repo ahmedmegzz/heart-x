@@ -65,8 +65,27 @@ def _env() -> dict:
     return {**os.environ, "PYTHONPATH": str(ROOT / "src"), "PYTHONUNBUFFERED": "1"}
 
 
+def _progress(out_dir: Path, completed: int, total: int, current: str, last: str = "") -> None:
+    text = (
+        "HEART-X advisor suite — live progress\n"
+        "=====================================\n"
+        f"{pd.Timestamp.now()}\n"
+        f"completed_runs: {completed} / ~{total}\n"
+        f"current: {current}\n"
+        f"last_finished: {last}\n"
+        "\n"
+        "Monitor: tail -f outputs/results/advisor_suite/suite.log\n"
+    )
+    (out_dir / "PROGRESS.txt").write_text(text)
+
+
 def _train(run_name: str, data: Path, model: str, fusion: str, epochs: int,
-           batch_size: int, loss: str, class_weight: str, sampler: str, seed: int) -> dict:
+           batch_size: int, loss: str, class_weight: str, sampler: str, seed: int,
+           *, resume: bool = True) -> dict:
+    result_path = RESULTS_DIR / run_name / "results.json"
+    if resume and result_path.exists():
+        print(f"\n>>> SKIP (resume) {run_name}", flush=True)
+        return json.loads(result_path.read_text())
     cmd = [
         str(_py()), str(ROOT / "scripts" / "train_heartx.py"),
         "--data", str(data),
@@ -82,7 +101,7 @@ def _train(run_name: str, data: Path, model: str, fusion: str, epochs: int,
     ]
     print("\n>>>", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True, cwd=str(ROOT), env=_env())
-    return json.loads((RESULTS_DIR / run_name / "results.json").read_text())
+    return json.loads(result_path.read_text())
 
 
 def _row_from_result(res: dict, **extra) -> dict:
@@ -127,7 +146,9 @@ def main() -> None:
     parser.add_argument("--skip-fusion", action="store_true")
     parser.add_argument("--skip-imbalance", action="store_true")
     parser.add_argument("--quick", action="store_true", help="Fewer imbalance configs")
+    parser.add_argument("--no-resume", action="store_true", help="Re-run even if results exist")
     args = parser.parse_args()
+    resume = not args.no_resume
 
     if not args.data.exists():
         raise FileNotFoundError(
@@ -141,6 +162,12 @@ def main() -> None:
 
     imbalance_cfgs = IMBALANCE[:4] if args.quick else IMBALANCE
     all_ablation, all_fusion, all_imbalance = [], [], []
+    n_abl = 0 if args.skip_ablation else len(args.seeds) * len(ABLATION_MODELS)
+    n_fus = 0 if args.skip_fusion else len(args.seeds) * len(FUSIONS)
+    n_imb = 0 if args.skip_imbalance else len(args.seeds) * len(imbalance_cfgs)
+    total_runs = n_abl + n_fus + n_imb
+    completed = 0
+    last_finished = ""
 
     # ---- Ablation ----
     if not args.skip_ablation:
@@ -148,11 +175,15 @@ def main() -> None:
             for model in ABLATION_MODELS:
                 run = f"suite_ablation_{model}_seed{seed}"
                 fusion = "concat" if model in {"1d", "2d", "clinical"} else "concat"
+                _progress(out_dir, completed, total_runs, run, last_finished)
                 res = _train(
                     run, args.data, model, fusion, args.epochs, args.batch_size,
-                    "ce", "balanced", "none", seed,
+                    "ce", "balanced", "none", seed, resume=resume,
                 )
                 all_ablation.append(_row_from_result(res, experiment="ablation", model=model, seed=seed))
+                completed += 1
+                last_finished = str(RESULTS_DIR / run / "results.json")
+                _progress(out_dir, completed, total_runs, "(between runs)", last_finished)
 
         ab_df = pd.DataFrame(all_ablation)
         ab_df.to_csv(out_dir / "ablation_raw.csv", index=False)
@@ -179,11 +210,15 @@ def main() -> None:
         for seed in args.seeds:
             for fusion in FUSIONS:
                 run = f"suite_fusion_{fusion}_seed{seed}"
+                _progress(out_dir, completed, total_runs, run, last_finished)
                 res = _train(
                     run, args.data, "1d_2d_clinical", fusion, args.epochs, args.batch_size,
-                    "ce", "balanced", "none", seed,
+                    "ce", "balanced", "none", seed, resume=resume,
                 )
                 all_fusion.append(_row_from_result(res, experiment="fusion", fusion=fusion, seed=seed))
+                completed += 1
+                last_finished = str(RESULTS_DIR / run / "results.json")
+                _progress(out_dir, completed, total_runs, "(between runs)", last_finished)
 
         fu_df = pd.DataFrame(all_fusion)
         fu_df.to_csv(out_dir / "fusion_raw.csv", index=False)
@@ -207,9 +242,10 @@ def main() -> None:
         for seed in args.seeds:
             for class_weight, loss, sampler in imbalance_cfgs:
                 run = f"suite_imb_cw-{class_weight}_loss-{loss}_samp-{sampler}_seed{seed}"
+                _progress(out_dir, completed, total_runs, run, last_finished)
                 res = _train(
                     run, args.data, "1d_2d_clinical", "concat", args.epochs, args.batch_size,
-                    loss, class_weight, sampler, seed,
+                    loss, class_weight, sampler, seed, resume=resume,
                 )
                 all_imbalance.append(
                     _row_from_result(
@@ -221,6 +257,9 @@ def main() -> None:
                         seed=seed,
                     )
                 )
+                completed += 1
+                last_finished = str(RESULTS_DIR / run / "results.json")
+                _progress(out_dir, completed, total_runs, "(between runs)", last_finished)
 
         im_df = pd.DataFrame(all_imbalance)
         im_df.to_csv(out_dir / "imbalance_raw.csv", index=False)
@@ -289,6 +328,70 @@ def main() -> None:
     (RESULTS_DIR / "danisman_sonuc_ozeti.txt").write_text(summary_path.read_text())
     print("\n".join(lines))
     print(f"\nWrote {summary_path}")
+
+    # ---- Pick final model & run external / XAI ----
+    final_fusion = "concat"
+    final_seed = args.seeds[0]
+    if (out_dir / "fusion_mean_std.csv").exists():
+        fu = pd.read_csv(out_dir / "fusion_mean_std.csv")
+        final_fusion = str(fu.iloc[0]["fusion"])
+    # Prefer seed with best raw fusion F1 for that fusion type
+    if (out_dir / "fusion_raw.csv").exists():
+        fr = pd.read_csv(out_dir / "fusion_raw.csv")
+        sub = fr[fr["fusion"] == final_fusion]
+        if len(sub):
+            best_row = sub.loc[sub["f1_macro"].idxmax()]
+            final_seed = int(best_row["seed"])
+    ckpt = ROOT / "outputs" / "checkpoints" / f"heartx_suite_fusion_{final_fusion}_seed{final_seed}.pt"
+    lines_final = [
+        "",
+        "=== Final model selection ===",
+        f"fusion={final_fusion}  seed={final_seed}",
+        f"checkpoint={ckpt}",
+    ]
+    print("\n".join(lines_final), flush=True)
+    (out_dir / "final_model.txt").write_text("\n".join(lines_final) + "\n")
+
+    if ckpt.exists():
+        env = _env()
+        # Fusion weight analysis
+        cmd_fw = [
+            str(_py()), str(ROOT / "scripts" / "analyze_fusion_weights.py"),
+            "--data", str(args.data),
+            "--checkpoint", str(ckpt),
+            "--model", "1d_2d_clinical",
+            "--fusion", final_fusion,
+            "--num-samples", "64",
+            "--out-dir", str(FIGURE_DIR / "fusion_weights_final"),
+        ]
+        print("\n>>>", " ".join(cmd_fw), flush=True)
+        subprocess.run(cmd_fw, check=False, cwd=str(ROOT), env=env)
+
+        # External validation (proxy / supplementary)
+        cmd_ext = [
+            str(_py()), str(ROOT / "scripts" / "external_validation.py"),
+            "--mitbih-data", str(args.data),
+            "--checkpoint", str(ckpt),
+            "--model", "1d_2d_clinical",
+            "--fusion", final_fusion,
+        ]
+        print("\n>>>", " ".join(cmd_ext), flush=True)
+        subprocess.run(cmd_ext, check=False, cwd=str(ROOT), env=env)
+
+        # MM-GradCAM
+        cmd_xai = [
+            str(_py()), str(ROOT / "scripts" / "explain_mm_gradcam.py"),
+            "--data", str(args.data),
+            "--checkpoint", str(ckpt),
+            "--model", "1d_2d_clinical",
+            "--fusion", final_fusion,
+            "--num-samples", "8",
+            "--out-dir", str(FIGURE_DIR / "mm_gradcam_final"),
+        ]
+        print("\n>>>", " ".join(cmd_xai), flush=True)
+        subprocess.run(cmd_xai, check=False, cwd=str(ROOT), env=env)
+    else:
+        print(f"WARNING: final checkpoint missing: {ckpt}", flush=True)
 
 
 if __name__ == "__main__":

@@ -71,9 +71,10 @@ def main() -> None:
     chosen = chosen[: args.num_samples]
 
     for i, idx in enumerate(chosen):
-        t1 = torch.from_numpy(x_1d[idx : idx + 1]).to(device)
-        t2 = torch.from_numpy(x_2d[idx : idx + 1]).to(device)
-        tc = torch.from_numpy(clinical[idx : idx + 1]).to(device)
+        # Spectrograms may be float16 on disk; model weights are float32.
+        t1 = torch.from_numpy(np.asarray(x_1d[idx : idx + 1], dtype=np.float32)).to(device)
+        t2 = torch.from_numpy(np.asarray(x_2d[idx : idx + 1], dtype=np.float32)).to(device)
+        tc = torch.from_numpy(np.asarray(clinical[idx : idx + 1], dtype=np.float32)).to(device)
         out = explainer.generate(t1, t2, tc)
         true_name = AAMI_CLASSES[int(y[idx])]
         pred_name = AAMI_CLASSES[out["pred_class"]]

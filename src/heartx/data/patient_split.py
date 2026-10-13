@@ -142,6 +142,118 @@ def masks_from_split(n: int, split: SplitResult) -> tuple[np.ndarray, np.ndarray
     return train_mask, val_mask, test_mask
 
 
+def _class_counts(y: np.ndarray, n_classes: int) -> np.ndarray:
+    return np.bincount(y.astype(int), minlength=n_classes)
+
+
+def minority_aware_ds1_val_split(
+    y: np.ndarray,
+    groups: np.ndarray,
+    test_groups: np.ndarray | list | set,
+    val_ratio: float = 0.15,
+    seed: int = 42,
+    minority_class_indices: tuple[int, ...] = (1, 3),  # S, F in AAMI
+    min_minority_per_class: int = 30,
+    n_trials: int = 200,
+) -> SplitResult:
+    """
+    Patient-wise train/val within non-test groups, searching GroupShuffleSplit
+    seeds so validation has enough minority samples (esp. S and F).
+
+    Score prioritizes:
+      1) every minority class in val with count >= min_minority_per_class
+      2) every minority class in train with count >= min_minority_per_class
+      3) maximize train minority min (keep rare-class mass for learning)
+      4) maximize val minority min (stable early stopping / selection)
+      5) keep val sample fraction close to ``val_ratio``
+
+    MIT-BIH note: DS1 fusion (F) is concentrated in record 208; once both
+    sides meet the floor, prefer keeping 208 in train rather than val.
+    """
+    y = np.asarray(y)
+    groups = np.asarray(groups)
+    n_classes = int(max(int(y.max()) + 1, max(minority_class_indices) + 1))
+    base = patient_wise_split(
+        y=y,
+        groups=groups,
+        test_groups=test_groups,
+        val_ratio=val_ratio,
+        seed=seed,
+        ensure_test_classes=True,
+    )
+    # Rebuild train/val only over non-test groups with search
+    test_set = {str(g) for g in test_groups}
+    idx_all = np.arange(len(y))
+    test_mask = np.array([str(g) in test_set for g in groups])
+    test_idx = idx_all[test_mask]
+    tv_idx = idx_all[~test_mask]
+    tv_groups = groups[~test_mask]
+    tv_y = y[~test_mask]
+
+    best = None
+    best_score = (-1e18, -1e18, -1e18, -1e18, -1e18)
+
+    for trial in range(n_trials):
+        gss = GroupShuffleSplit(
+            n_splits=1, test_size=val_ratio, random_state=seed + trial
+        )
+        tr_rel, va_rel = next(gss.split(tv_idx, tv_y, groups=tv_groups))
+        val_y = tv_y[va_rel]
+        train_y = tv_y[tr_rel]
+        val_counts = _class_counts(val_y, n_classes)
+        train_counts = _class_counts(train_y, n_classes)
+        val_m = np.array([val_counts[i] for i in minority_class_indices], dtype=float)
+        train_m = np.array([train_counts[i] for i in minority_class_indices], dtype=float)
+        n_ok_val = int(np.sum(val_m >= min_minority_per_class))
+        n_ok_train = int(np.sum(train_m >= min_minority_per_class))
+        train_min = float(train_m.min()) if len(train_m) else 0.0
+        val_min = float(val_m.min()) if len(val_m) else 0.0
+        frac = len(va_rel) / max(len(tv_idx), 1)
+        ratio_score = -abs(frac - val_ratio)
+        score = (n_ok_val, n_ok_train, train_min, val_min, ratio_score)
+        if score > best_score:
+            best_score = score
+            train_idx = tv_idx[tr_rel]
+            val_idx = tv_idx[va_rel]
+            best = SplitResult(
+                train_idx=np.sort(train_idx),
+                val_idx=np.sort(val_idx),
+                test_idx=np.sort(test_idx),
+                train_groups=groups[train_idx],
+                val_groups=groups[val_idx],
+                test_groups=groups[test_idx],
+            )
+            best._val_minority_counts = {  # type: ignore[attr-defined]
+                int(i): int(val_counts[i]) for i in minority_class_indices
+            }
+            best._train_minority_counts = {  # type: ignore[attr-defined]
+                int(i): int(train_counts[i]) for i in minority_class_indices
+            }
+            best._val_class_counts = val_counts.tolist()  # type: ignore[attr-defined]
+            best._split_trial = trial  # type: ignore[attr-defined]
+
+    assert best is not None
+    best.assert_no_leakage()
+    # Prefer a split that meets the minority floor; warn if impossible
+    vmin = getattr(best, "_val_minority_counts", {})
+    if any(vmin.get(i, 0) < min_minority_per_class for i in minority_class_indices):
+        print(
+            f"  WARNING: could not reach min_minority_per_class={min_minority_per_class} "
+            f"for all minorities; best val minority counts={vmin}",
+            flush=True,
+        )
+    else:
+        tmin = getattr(best, "_train_minority_counts", {})
+        print(
+            f"  Minority-aware val OK (trial={getattr(best, '_split_trial', '?')}): "
+            f"val={vmin} train={tmin}",
+            flush=True,
+        )
+    # preserve missing-test info from base
+    best._missing_test_classes = getattr(base, "_missing_test_classes", [])  # type: ignore[attr-defined]
+    return best
+
+
 def log_split_summary(name: str, split: SplitResult, groups: np.ndarray) -> None:
     s = split.summary()
     print(f"=== Split summary ({name}) ===", flush=True)
@@ -158,3 +270,6 @@ def log_split_summary(name: str, split: SplitResult, groups: np.ndarray) -> None
             "Patient-wise constraint prevents automatic repair; report this in thesis.",
             flush=True,
         )
+    vmin = getattr(split, "_val_minority_counts", None)
+    if vmin:
+        print(f"  Val minority counts: {vmin}", flush=True)

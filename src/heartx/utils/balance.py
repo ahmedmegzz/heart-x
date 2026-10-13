@@ -11,6 +11,7 @@ which would break signal–spectrogram alignment.
 
 from __future__ import annotations
 
+import gc
 import random
 
 import numpy as np
@@ -34,6 +35,7 @@ def oversample_balance(
     method: str = "random",
     fs: float = 360.0,
     spectrogram_method: str = "stft",
+    release_bag: list | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Balance classes while keeping dual-stream modalities aligned.
@@ -46,6 +48,9 @@ def oversample_balance(
         - ``smote``: SMOTE on flattened 1D (+ clinical). Original rows keep
           their spectrograms; only **synthetic** 1D rows get a newly computed
           spectrogram (see module docstring).
+    release_bag :
+        Optional ``[x_1d, x_2d]`` list from the caller. Cleared after buffers
+        are consumed so peak RAM drops on small hosts.
     """
     method = method.lower()
     if method in {"random", "random_oversample", "ros"}:
@@ -55,13 +60,16 @@ def oversample_balance(
         ros = RandomOverSampler(random_state=random_state)
         idx_res, y_res = ros.fit_resample(idx, y)
         src = idx_res[:, 0]
-        return x_1d[src], x_2d[src], clinical[src], y_res.astype(np.int64)
+        out = x_1d[src], x_2d[src], clinical[src], y_res.astype(np.int64)
+        if release_bag is not None:
+            release_bag.clear()
+            gc.collect()
+        return out
 
     if method != "smote":
         raise ValueError(f"Unknown oversample method: {method}")
 
     from imblearn.over_sampling import SMOTE
-    from sklearn.neighbors import NearestNeighbors
 
     from heartx.features.spectrogram import cwt_scalogram, stft_spectrogram
 
@@ -72,39 +80,69 @@ def oversample_balance(
     if k < 1:
         return x_1d, x_2d, clinical, y
 
-    x1_flat = x_1d.reshape(n, -1)
+    x1_tail_shape = x_1d.shape[1:]
+    x2_tail_shape = x_2d.shape[1:]
+    x1_flat = np.ascontiguousarray(x_1d.reshape(n, -1), dtype=np.float32)
     c_dim = clinical.shape[1]
-    feat = np.concatenate([x1_flat, clinical], axis=1).astype(np.float32)
+    clin_f = np.ascontiguousarray(clinical, dtype=np.float32)
+    feat = np.concatenate([x1_flat, clin_f], axis=1)
+    del clin_f
+    # 1D buffer no longer needed after feat is built
+    if release_bag is not None and len(release_bag) > 0:
+        release_bag[0] = None
+    del x_1d
+    gc.collect()
+
     sampler = SMOTE(random_state=random_state, k_neighbors=k)
     feat_res, y_res = sampler.fit_resample(feat, y)
 
     t = x1_flat.shape[1]
-    x1_out = feat_res[:, :t].reshape(-1, *x_1d.shape[1:]).astype(np.float32)
-    clin_out = feat_res[:, t : t + c_dim].astype(np.float32)
+    # Exact float identity → original row (SMOTE copies rows as-is).
+    orig_keys = {feat[i].tobytes(): i for i in range(n)}
+    del feat, x1_flat
+    gc.collect()
 
-    # Map each resampled row to nearest original → reuse spectrogram when identical
-    nn = NearestNeighbors(n_neighbors=1).fit(feat)
-    _, idxs = nn.kneighbors(feat_res)
-    src = idxs[:, 0]
-    # Rows whose compact features match an original exactly (distance ~0) keep x2
-    # Synthetic rows: regenerate spectrogram from synthetic 1D
-    dists, _ = nn.kneighbors(feat_res)
-    is_original = dists[:, 0] < 1e-6
+    n_out = int(len(y_res))
+    x1_out = feat_res[:, :t].reshape(n_out, *x1_tail_shape).astype(np.float32, copy=False)
+    clin_out = feat_res[:, t : t + c_dim].astype(np.float32, copy=False)
 
-    x2_out = np.empty((len(x1_out), *x_2d.shape[1:]), dtype=np.float32)
-    x2_out[is_original] = x_2d[src[is_original]].astype(np.float32)
+    src = np.full(n_out, -1, dtype=np.int64)
+    is_original = np.zeros(n_out, dtype=bool)
+    for i in range(n_out):
+        j = orig_keys.get(feat_res[i].tobytes())
+        if j is not None:
+            is_original[i] = True
+            src[i] = j
+    del feat_res, orig_keys
+    gc.collect()
+
+    # float16 from the start — float32 buffer was ~3GB and OOM'd on 8GB hosts.
+    x2_out = np.empty((n_out, *x2_tail_shape), dtype=np.float16)
+    orig_pos = np.where(is_original)[0]
+    x2_out[orig_pos] = np.asarray(x_2d[src[orig_pos]], dtype=np.float16)
+    del orig_pos, x_2d
+    if release_bag is not None:
+        release_bag.clear()
+    gc.collect()
 
     transform = stft_spectrogram if spectrogram_method == "stft" else cwt_scalogram
     synth_idx = np.where(~is_original)[0]
-    flat_1d = x1_out.reshape(len(x1_out), -1)
-    for i in synth_idx:
+    print(
+        f"SMOTE spectrograms: {int(is_original.sum())} reused, "
+        f"{len(synth_idx)} regenerated",
+        flush=True,
+    )
+    flat_1d = x1_out.reshape(n_out, -1)
+    for bi, i in enumerate(synth_idx):
         spec = transform(flat_1d[i], fs=fs)
-        x2_out[i, 0] = spec.astype(np.float32)
+        x2_out[i, 0] = spec.astype(np.float16, copy=False)
+        if (bi + 1) % 10000 == 0:
+            print(f"  regenerated {bi + 1}/{len(synth_idx)}", flush=True)
 
-    return x1_out, x2_out.astype(np.float16), clin_out, y_res.astype(np.int64)
+    return x1_out, x2_out, clin_out, y_res.astype(np.int64)
 
 
 def smote_balance(*args, **kwargs):
-    """Backward-compatible alias; defaults to random oversampling. """
+    """ Backward-compatible alias; defaults to random oversampling. """
     kwargs.setdefault("method", "random")
     return oversample_balance(*args, **kwargs)
