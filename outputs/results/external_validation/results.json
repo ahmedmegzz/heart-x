@@ -1,14 +1,14 @@
 {
-  "checkpoint": "outputs/checkpoints/heartx_smoke_gated.pt",
+  "checkpoint": "/home/kimbra/Documents/GitHub/tez/outputs/checkpoints/heartx_suite_fusion_attention_seed44.pt",
   "mitbih": {
-    "f1_macro": 0.5793076449943142,
-    "accuracy": 0.7298240291262136,
-    "report": "              precision    recall  f1-score   support\n\n      normal     0.9536    0.7362    0.8309      5945\n    abnormal     0.2168    0.6708    0.3277       647\n\n    accuracy                         0.7298      6592\n   macro avg     0.5852    0.7035    0.5793      6592\nweighted avg     0.8813    0.7298    0.7815      6592\n"
+    "f1_macro": 0.8667018611730022,
+    "accuracy": 0.952664627274191,
+    "report": "              precision    recall  f1-score   support\n\n      normal     0.9617    0.9861    0.9737     44236\n    abnormal     0.8576    0.6818    0.7597      5452\n\n    accuracy                         0.9527     49688\n   macro avg     0.9097    0.8339    0.8667     49688\nweighted avg     0.9503    0.9527    0.9503     49688\n"
   },
   "ptbxl": {
-    "f1_macro": 0.5249266862170088,
-    "accuracy": 0.6111111111111112,
-    "report": "              precision    recall  f1-score   support\n\n      normal     0.5957    0.9333    0.7273        30\n    abnormal     0.7143    0.2083    0.3226        24\n\n    accuracy                         0.6111        54\n   macro avg     0.6550    0.5708    0.5249        54\nweighted avg     0.6484    0.6111    0.5474        54\n"
+    "f1_macro": 0.4014457831325301,
+    "accuracy": 0.5740740740740741,
+    "report": "              precision    recall  f1-score   support\n\n      normal     0.5660    1.0000    0.7229        30\n    abnormal     1.0000    0.0417    0.0800        24\n\n    accuracy                         0.5741        54\n   macro avg     0.7830    0.5208    0.4014        54\nweighted avg     0.7589    0.5741    0.4372        54\n"
   },
   "mapping": "MIT-BIH AAMI -> proxy:\n  N -> normal\n  S -> abnormal\n  V -> abnormal\n  F -> abnormal\n  Q -> abnormal\nPTB-XL superclass -> proxy:\n  NORM -> normal\n  MI -> abnormal\n  STTC -> abnormal\n  CD -> abnormal\n  HYP -> abnormal\n\nLimitation: beat-level arrhythmia classes cannot be mapped 1:1 onto\nPTB-XL diagnostic superclasses; evaluation is binary normal/abnormal proxy."
 }

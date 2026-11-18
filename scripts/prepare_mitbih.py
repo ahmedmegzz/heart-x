@@ -47,6 +47,7 @@ from heartx.data.mitbih import beats_to_arrays, load_mitbih_beats  # noqa: E402
 from heartx.data.patient_split import (  # noqa: E402
     log_split_summary,
     masks_from_split,
+    minority_aware_ds1_val_split,
     patient_wise_split,
 )
 from heartx.features.spectrogram import make_dual_reps  # noqa: E402
@@ -64,6 +65,12 @@ def main() -> None:
     parser.add_argument("--method", choices=["stft", "cwt"], default="stft")
     parser.add_argument("--out-dir", type=Path, default=PROCESSED_DIR / "mitbih")
     parser.add_argument("--val-ratio", type=float, default=VAL_RATIO)
+    parser.add_argument(
+        "--min-val-minority",
+        type=int,
+        default=30,
+        help="Minimum S and F samples required in DS1 validation (patient-wise search).",
+    )
     parser.add_argument(
         "--drop-q-if-unevaluable",
         action="store_true",
@@ -118,12 +125,16 @@ def main() -> None:
     if non_ds1_in_trainval_candidates:
         raise RuntimeError(f"Non-DS1/DS2 records present: {non_ds1_in_trainval_candidates}")
 
-    split = patient_wise_split(
+    # DS2 = test; train/val from DS1 with minority-aware (S/F) validation search
+    split = minority_aware_ds1_val_split(
         y=y,
         groups=records,
         test_groups=ds2,
         val_ratio=args.val_ratio,
         seed=SEED,
+        minority_class_indices=(1, 3),  # S, F
+        min_minority_per_class=args.min_val_minority,
+        n_trials=500,
     )
     # Enforce: every train/val group must be in DS1; every test group in DS2
     train_g = set(map(str, split.train_groups))
@@ -132,15 +143,18 @@ def main() -> None:
     assert train_g.issubset(ds1), f"Train groups outside DS1: {train_g - ds1}"
     assert val_g.issubset(ds1), f"Val groups outside DS1: {val_g - ds1}"
     assert test_g.issubset(ds2), f"Test groups outside DS2: {test_g - ds2}"
+    assert "124" in (train_g | val_g), "Record 124 must be in DS1 train or val"
     assert train_g.isdisjoint(val_g)
     assert (train_g | val_g).isdisjoint(test_g)
 
-    log_split_summary("MIT-BIH Chazal", split, records)
+    log_split_summary("MIT-BIH Chazal (+124, S/F-aware val)", split, records)
     print(
         f"  DS1 train records={len(train_g)}  DS1 val records={len(val_g)}  "
         f"DS2 test records={len(test_g)}",
         flush=True,
     )
+    print(f"  train records: {sorted(train_g)}", flush=True)
+    print(f"  val records:   {sorted(val_g)}", flush=True)
     train_mask, val_mask, test_mask = masks_from_split(len(y), split)
 
     class_names = list(AAMI_CLASSES)
@@ -166,8 +180,15 @@ def main() -> None:
             )
             # Remap labels: N,S,V,F stay 0..3
             class_names = ["N", "S", "V", "F"]
-            split = patient_wise_split(
-                y=y, groups=records, test_groups=ds2, val_ratio=args.val_ratio, seed=SEED
+            split = minority_aware_ds1_val_split(
+                y=y,
+                groups=records,
+                test_groups=ds2,
+                val_ratio=args.val_ratio,
+                seed=SEED,
+                minority_class_indices=(1, 3),
+                min_minority_per_class=args.min_val_minority,
+                n_trials=500,
             )
             train_mask, val_mask, test_mask = masks_from_split(len(y), split)
             missing = assert_no_empty_test_classes(y, test_mask, class_names)
@@ -178,6 +199,12 @@ def main() -> None:
                 "Pass --drop-q-if-unevaluable for 4-class N/S/V/F final tables.",
                 flush=True,
             )
+
+    # Refresh group sets after any optional Q drop / re-split
+    train_g = set(map(str, split.train_groups))
+    val_g = set(map(str, split.val_groups))
+    test_g = set(map(str, split.test_groups))
+    missing_val = assert_no_empty_test_classes(y, val_mask, class_names)
 
     dist = split_class_distribution(
         y,
@@ -191,6 +218,18 @@ def main() -> None:
     )
     print(f"Class distribution -> {csv_p}, {png_p}", flush=True)
     print(dist.pivot(index="class", columns="split", values="count").fillna(0).astype(int))
+
+    # Assert S/F not collapsed in validation
+    val_counts = {
+        class_names[i]: int(np.sum(y[val_mask] == i)) for i in range(len(class_names))
+    }
+    print(f"  Val class counts: {val_counts}", flush=True)
+    if val_counts.get("S", 0) < args.min_val_minority or val_counts.get("F", 0) < args.min_val_minority:
+        print(
+            f"  WARNING: val S={val_counts.get('S', 0)} F={val_counts.get('F', 0)} "
+            f"below target {args.min_val_minority}",
+            flush=True,
+        )
 
     np.savez_compressed(
         out / "mitbih_dual.npz",
@@ -210,6 +249,11 @@ def main() -> None:
         ds1=np.array(sorted(ds1)),
         ds2=np.array(sorted(ds2)),
     )
+    vmin = getattr(split, "_val_minority_counts", {})
+    vmin_named = {
+        (class_names[i] if i < len(class_names) else str(i)): int(v)
+        for i, v in vmin.items()
+    }
     meta = {
         "n_beats": int(len(y)),
         "class_counts": {
@@ -217,7 +261,7 @@ def main() -> None:
         },
         **split.summary(),
         "missing_test_classes": missing,
-        "missing_val_classes": missing_val if not args.drop_q_if_unevaluable else [],
+        "missing_val_classes": missing_val,
         "q_note": q_note,
         "excluded_pacemaker": sorted(exclude),
         "method": args.method,
@@ -225,12 +269,18 @@ def main() -> None:
         "signal_len": int(x_1d.shape[-1]),
         "spec_shape": list(x_2d.shape[-2:]),
         "clinical_dim": int(clinical.shape[1]),
-        "split": "chazal_ds2_test_ds1_train_val",
+        "split": "chazal_ds2_test_ds1_train_val_sf_aware",
         "max_beats_per_record": args.max_beats_per_record,
+        "val_records": sorted(val_g),
+        "train_records": sorted(train_g),
+        "val_class_counts": val_counts,
+        "val_minority_counts": vmin_named,
+        "min_val_minority": args.min_val_minority,
         "protocol_notes": [
             "Excluded pacemaker records 102, 104, 107, 217",
             "DS2 used only as test",
-            "Train/val split patient-wise within DS1 only",
+            "Train/val split patient-wise within DS1 only (DS1 includes 124)",
+            "Validation chosen to ensure adequate S and F representation",
             "All AAMI beats used unless --max-beats-per-record set",
         ],
     }

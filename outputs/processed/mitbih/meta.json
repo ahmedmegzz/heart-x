@@ -1,21 +1,23 @@
 {
-  "n_beats": 99062,
+  "n_beats": 100680,
   "class_counts": {
-    "N": 88540,
-    "S": 2749,
-    "V": 6961,
-    "F": 797,
+    "N": 90075,
+    "S": 2780,
+    "V": 7008,
+    "F": 802,
     "Q": 15
   },
-  "n_train": 39170,
-  "n_val": 10204,
+  "n_train": 42069,
+  "n_val": 8923,
   "n_test": 49688,
-  "n_train_groups": 17,
+  "n_train_groups": 18,
   "n_val_groups": 4,
   "n_test_groups": 22,
   "missing_test_classes": [],
-  "missing_val_classes": [],
-  "q_note": "",
+  "missing_val_classes": [
+    "Q"
+  ],
+  "q_note": "Q has 0 samples in val and/or test under Chazal (paced records 102/104/107/217 excluded; remaining Q beats are rare and concentrated in DS1). ",
   "excluded_pacemaker": [
     "102",
     "104",
@@ -30,12 +32,51 @@
     64
   ],
   "clinical_dim": 8,
-  "split": "chazal_ds2_test_ds1_train_val",
+  "split": "chazal_ds2_test_ds1_train_val_sf_aware",
   "max_beats_per_record": null,
+  "val_records": [
+    "124",
+    "205",
+    "220",
+    "223"
+  ],
+  "train_records": [
+    "101",
+    "106",
+    "108",
+    "109",
+    "112",
+    "114",
+    "115",
+    "116",
+    "118",
+    "119",
+    "122",
+    "201",
+    "203",
+    "207",
+    "208",
+    "209",
+    "215",
+    "230"
+  ],
+  "val_class_counts": {
+    "N": 8101,
+    "S": 201,
+    "V": 591,
+    "F": 30,
+    "Q": 0
+  },
+  "val_minority_counts": {
+    "S": 201,
+    "F": 30
+  },
+  "min_val_minority": 30,
   "protocol_notes": [
     "Excluded pacemaker records 102, 104, 107, 217",
     "DS2 used only as test",
-    "Train/val split patient-wise within DS1 only",
+    "Train/val split patient-wise within DS1 only (DS1 includes 124)",
+    "Validation chosen to ensure adequate S and F representation",
     "All AAMI beats used unless --max-beats-per-record set"
   ]
 }

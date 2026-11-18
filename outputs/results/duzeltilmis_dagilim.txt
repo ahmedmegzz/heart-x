@@ -1,31 +1,24 @@
-HEART-X — Düzeltilmiş Train/Val/Test Dağılımı (Chazal)
-============================================================
+HEART-X — Düzeltilmiş dağılım (DS1+124, S/F-aware val)
+========================================================
 Protokol:
-  - Excluded pacemaker records 102, 104, 107, 217
-  - DS2 used only as test
-  - Train/val split patient-wise within DS1 only
-  - All AAMI beats used unless --max-beats-per-record set
-Hariç tutulan pacemaker: ['102', '104', '107', '217']
+  - Pacemaker 102/104/107/217 çıkarıldı
+  - DS2 = test only
+  - Train/val patient-wise within DS1 (DS1 includes 124)
+  - Validation chosen so S and F are both >= 30 (not 8-S collapse)
+  - F-heavy record 208 kept in TRAIN when both sides meet the floor
 
-Toplam atım: 99062 (tüm uygun AAMI atımları; kayıt başı limit YOK)
-Train: 39170 atım / 17 DS1 kayıt
-Val:   10204 atım / 4 DS1 kayıt
+Toplam atım: 100680
+  N=90075  S=2780  V=7008  F=802  Q=15
+
+Train: 42069 atım / 18 DS1 kayıt
+  N=37738  S=742  V=3197  F=384  Q=8
+  records: 101,106,108,109,112,114,115,116,118,119,122,201,203,207,208,209,215,230
+
+Val:   8923 atım / 4 DS1 kayıt
+  N=8101  S=201  V=591  F=30  Q=0
+  records: 124,205,220,223
+
 Test:  49688 atım / 22 DS2 kayıt
+  N=44236  S=1837  V=3220  F=388  Q=7
 
-Sınıf dağılımı (adet):
-split   test  train   val
-class                    
-F        388     36   373
-N      44236  36161  8143
-Q          7      4     4
-S       1837    904     8
-V       3220   2065  1676
-
-Q sınıfı notu:
-  Önceki smoke testte (max 300 atım/kayıt) Q testte yoktu.
-  Tüm atımlar + paced hariç ile Q: train/val/testte mevcut.
-  Toplam Q=15; missing_test=[]; missing_val=[]
-
-train kayıtları (17): 108, 109, 112, 114, 115, 116, 118, 119, 122, 201, 203, 205, 207, 209, 220, 223, 230
-val kayıtları (4): 101, 106, 208, 215
-test kayıtları (22): 100, 103, 105, 111, 113, 117, 121, 123, 200, 202, 210, 212, 213, 214, 219, 221, 222, 228, 231, 232, 233, 234
+Not: Q val'de yok (paced kayıtlar çıkarıldığı için); 5-sınıf etiket korunur, Q unevaluable.

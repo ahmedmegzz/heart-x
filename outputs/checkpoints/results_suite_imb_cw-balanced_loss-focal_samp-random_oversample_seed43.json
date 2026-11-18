@@ -1,0 +1,86 @@
+{
+  "run_name": "suite_imb_cw-balanced_loss-focal_samp-random_oversample_seed43",
+  "model": "1d_2d_clinical",
+  "fusion": "concat",
+  "loss": "focal",
+  "sampler": "random_oversample",
+  "class_weight": "balanced",
+  "epochs": 8,
+  "seed": 43,
+  "primary_metric": "f1_macro",
+  "test_f1_macro": 0.4023540961020885,
+  "test_accuracy": 0.8841168893897923,
+  "test_precision_macro": 0.4081934318828037,
+  "test_recall_macro": 0.4190190845121985,
+  "test_specificity_macro": 0.9281788952763372,
+  "per_class": {
+    "N": {
+      "precision": 0.9649691394800181,
+      "recall": 0.9153856587394882,
+      "f1": 0.9395236603672896,
+      "support": 44236,
+      "specificity": 0.7303741746134806
+    },
+    "S": {
+      "precision": 0.4436958614051973,
+      "recall": 0.25095264017419705,
+      "f1": 0.32058414464534074,
+      "support": 1837,
+      "specificity": 0.9879208375998437
+    },
+    "V": {
+      "precision": 0.631288473784759,
+      "recall": 0.9236024844720497,
+      "f1": 0.749968478123818,
+      "support": 3220,
+      "specificity": 0.9626194370317288
+    },
+    "F": {
+      "precision": 0.0010136847440446021,
+      "recall": 0.005154639175257732,
+      "f1": 0.0016941973739940702,
+      "support": 388,
+      "specificity": 0.9600202839754646
+    },
+    "Q": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 7,
+      "specificity": 0.9999597431611683
+    }
+  },
+  "history": {
+    "train_loss": [
+      0.01802556552787823,
+      0.0043512592979581275,
+      0.003106823863135507,
+      0.0021300745414895867,
+      0.000939959996341586,
+      0.0007305287787134621,
+      0.0006670179692325785,
+      0.0005480649792980012
+    ],
+    "val_acc": [
+      0.9418357054802197,
+      0.9293959430684747,
+      0.9397063767791102,
+      0.9391460271209234,
+      0.9590944749523703,
+      0.9436288243864172,
+      0.9437408943180544,
+      0.9605513840636557
+    ],
+    "val_f1": [
+      0.4534917634347351,
+      0.4376981603423157,
+      0.44333355458651164,
+      0.4451867514500443,
+      0.5054941212605817,
+      0.4579862189831996,
+      0.46130500163573585,
+      0.49535150834212444
+    ]
+  },
+  "checkpoint": "/home/kimbra/Documents/GitHub/tez/outputs/checkpoints/heartx_suite_imb_cw-balanced_loss-focal_samp-random_oversample_seed43.pt"
+}

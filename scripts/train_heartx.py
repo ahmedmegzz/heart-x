@@ -12,6 +12,7 @@ python scripts/train_heartx.py --model 1d_clinical --fusion concat
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import sys
 from pathlib import Path
@@ -64,6 +65,14 @@ def _needs_clinical(model_name: str) -> bool:
     }
 
 
+def _needs_1d(model_name: str) -> bool:
+    return model_name not in {"2d", "clinical", "2d_clinical"}
+
+
+def _needs_2d(model_name: str) -> bool:
+    return model_name not in {"1d", "clinical", "1d_clinical"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=PROCESSED_DIR / "mitbih" / "mitbih_dual.npz")
@@ -110,47 +119,58 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}", flush=True)
 
-    data = np.load(args.data, allow_pickle=True)
-    x_1d = data["x_1d"]
-    x_2d = data["x_2d"]
-    y = data["y"]
-    clinical = data["clinical"]
-    train_mask = data["train_mask"].astype(bool)
-    test_mask = data["test_mask"].astype(bool)
+    use_1d = _needs_1d(args.model)
+    use_2d = _needs_2d(args.model)
+    use_clin = _needs_clinical(args.model)
+    # Oversampling needs both streams (SMOTE regenerates spectrograms from 1D)
+    load_1d = use_1d or sampler != "none"
+    load_2d = use_2d or sampler != "none"
+
+    data = np.load(args.data, allow_pickle=True, mmap_mode="r")
+    y = np.asarray(data["y"])
+    clinical = np.asarray(data["clinical"])
+    train_mask = np.asarray(data["train_mask"]).astype(bool)
+    test_mask = np.asarray(data["test_mask"]).astype(bool)
     if "val_mask" in data.files:
-        val_mask = data["val_mask"].astype(bool)
+        val_mask = np.asarray(data["val_mask"]).astype(bool)
     else:
-        # Backward compat: no patient-wise val in old npz — leave empty and error
         raise RuntimeError(
             "Dataset missing val_mask. Re-run scripts/prepare_mitbih.py "
             "(patient-wise split)."
         )
     class_names = [str(c) for c in data["class_names"]]
-    fs = float(data["fs"]) if "fs" in data.files else 360.0
-    method = str(data["method"]) if "method" in data.files else "stft"
+    fs = float(np.asarray(data["fs"])) if "fs" in data.files else 360.0
+    method = str(np.asarray(data["method"])) if "method" in data.files else "stft"
 
-    x1_train, x2_train, y_train, c_train = (
-        x_1d[train_mask],
-        x_2d[train_mask],
-        y[train_mask],
-        clinical[train_mask],
-    )
-    x1_val, x2_val, y_val, c_val = (
-        x_1d[val_mask],
-        x_2d[val_mask],
-        y[val_mask],
-        clinical[val_mask],
-    )
-    x1_te, x2_te, y_te, c_te = (
-        x_1d[test_mask],
-        x_2d[test_mask],
-        y[test_mask],
-        clinical[test_mask],
-    )
+    # Keep test on disk until after fit to cut peak RAM (~400MB spectrograms).
+    y_train, c_train = y[train_mask], clinical[train_mask]
+    y_val, c_val = y[val_mask], clinical[val_mask]
+    data_path = args.data
+
+    if load_1d:
+        x_1d = data["x_1d"]
+        x1_train = np.asarray(x_1d[train_mask])
+        x1_val = np.asarray(x_1d[val_mask])
+        del x_1d
+    else:
+        x1_train = x1_val = None
+
+    if load_2d:
+        x_2d = data["x_2d"]  # typically float16 on disk
+        x2_train = np.asarray(x_2d[train_mask])
+        x2_val = np.asarray(x_2d[val_mask])
+        del x_2d
+    else:
+        x2_train = x2_val = None
+
+    del data, y, clinical, train_mask, val_mask, test_mask
+    gc.collect()
 
     if args.max_train is not None:
-        x1_train = x1_train[: args.max_train]
-        x2_train = x2_train[: args.max_train]
+        if x1_train is not None:
+            x1_train = x1_train[: args.max_train]
+        if x2_train is not None:
+            x2_train = x2_train[: args.max_train]
         y_train = y_train[: args.max_train]
         c_train = c_train[: args.max_train]
 
@@ -170,25 +190,44 @@ def main() -> None:
         print(f"Class weights: {dict(zip(class_names, np.round(weights, 3)))}", flush=True)
 
     if sampler != "none":
+        if x1_train is None or x2_train is None:
+            raise RuntimeError("Oversampling requires both 1D and 2D arrays")
         print(f"Oversampling train set ({sampler})...", flush=True)
+        # Mutable bag so SMOTE can drop the original spectrogram buffer after copy.
+        _bag = [x1_train, x2_train]
+        x1_train = x2_train = None
+        gc.collect()
         x1_train, x2_train, c_train, y_train = oversample_balance(
-            x1_train,
-            x2_train,
+            _bag[0],
+            _bag[1],
             c_train,
             y_train,
             random_state=args.seed,
             method=sampler,
             fs=fs,
             spectrogram_method=method,
+            release_bag=_bag,
         )
+        del _bag
         print(f"After oversample: {len(y_train)} samples", flush=True)
+        if x2_train is not None and x2_train.dtype != np.float16:
+            x2_train = x2_train.astype(np.float16, copy=False)
+        if not use_2d:
+            x2_train = x2_val = None
+        if not use_1d:
+            x1_train = x1_val = None
+        gc.collect()
 
-    use_clin = _needs_clinical(args.model)
     clinical_dim = int(c_train.shape[1]) if use_clin else 0
 
     def make_loader(x1, x2, yy, cc, shuffle):
         clin = cc if use_clin else None
-        ds = DualStreamECGDataset(x1, x2, yy, clin)
+        ds = DualStreamECGDataset(
+            x1 if use_1d else None,
+            x2 if use_2d else None,
+            yy,
+            clin,
+        )
         return DataLoader(
             ds,
             batch_size=args.batch_size,
@@ -199,7 +238,6 @@ def main() -> None:
 
     train_loader = make_loader(x1_train, x2_train, y_train, c_train, True)
     val_loader = make_loader(x1_val, x2_val, y_val, c_val, False)
-    test_loader = make_loader(x1_te, x2_te, y_te, c_te, False)
 
     model = build_heartx_model(
         args.model,
@@ -227,6 +265,21 @@ def main() -> None:
         loss_name=args.loss,
         focal_gamma=args.focal_gamma,
     )
+
+    # Free train/val before materializing the large DS2 test split.
+    del train_loader, val_loader, x1_train, x2_train, y_train, c_train
+    del x1_val, x2_val, y_val, c_val
+    gc.collect()
+
+    data = np.load(data_path, allow_pickle=True, mmap_mode="r")
+    test_mask = np.asarray(data["test_mask"]).astype(bool)
+    y_te = np.asarray(data["y"][test_mask])
+    c_te = np.asarray(data["clinical"][test_mask]) if use_clin else None
+    x1_te = np.asarray(data["x_1d"][test_mask]) if use_1d else None
+    x2_te = np.asarray(data["x_2d"][test_mask]) if use_2d else None
+    del data
+    gc.collect()
+    test_loader = make_loader(x1_te, x2_te, y_te, c_te, False)
 
     state = torch.load(ckpt, map_location=device, weights_only=False)
     model.load_state_dict(state["model_state"])

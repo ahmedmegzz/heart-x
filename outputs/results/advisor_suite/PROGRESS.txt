@@ -1,17 +1,8 @@
-HEART-X advisor suite — progress note
+HEART-X advisor suite — live progress
 =====================================
-Started: Chazal-corrected full MIT-BIH (99062 beats).
-Command: python scripts/run_advisor_suite.py --epochs 6 --seeds 42 43 44
+2026-10-13 09:02:16.660661
+completed_runs: 57 / ~57
+current: (between runs)
+last_finished: /home/kimbra/Documents/GitHub/tez/outputs/results/suite_imb_cw-balanced_loss-focal_samp-random_oversample_seed44/results.json
 
-Monitor:
-  tail -f outputs/results/advisor_suite/suite.log
-
-When finished, results will be in:
-  outputs/results/advisor_suite/ablation_mean_std.csv
-  outputs/results/advisor_suite/fusion_mean_std.csv
-  outputs/results/advisor_suite/imbalance_mean_std.csv
-  outputs/results/advisor_suite/advisor_summary.txt
-  outputs/results/danisman_sonuc_ozeti.txt
-  outputs/results/duzeltilmis_dagilim.txt
-
-Estimated runtime on CPU: many hours (ablation 7×3 + fusion 3×3 + imbalance ~9×3 runs).
+Monitor: tail -f outputs/results/advisor_suite/suite.log

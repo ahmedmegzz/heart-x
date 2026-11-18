@@ -59,6 +59,10 @@ def main() -> None:
     weights = []
     with torch.no_grad():
         for i in range(len(y)):
+<<<<<<< HEAD
+=======
+            # Spectrograms may be float16 on disk; model weights are float32.
+>>>>>>> c3e9d78ed97af81b116c3c9c5f37a1fdfab9bb8c
             t1 = torch.from_numpy(np.asarray(x_1d[i : i + 1], dtype=np.float32)).to(device)
             t2 = torch.from_numpy(np.asarray(x_2d[i : i + 1], dtype=np.float32)).to(device)
             tc = torch.from_numpy(np.asarray(clinical[i : i + 1], dtype=np.float32)).to(device)

@@ -25,6 +25,10 @@ def test_pacemaker_not_in_ds_lists():
     assert exclude.isdisjoint(set(MITBIH_DS2))
 
 
+def test_ds1_includes_124():
+    assert "124" in MITBIH_DS1
+
+
 def test_ds1_ds2_disjoint():
     assert set(MITBIH_DS1).isdisjoint(set(MITBIH_DS2))
 

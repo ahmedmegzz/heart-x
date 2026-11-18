@@ -1,0 +1,56 @@
+HEART-X — Güncel Sonuç Raporu (Ekim 2026)
+==========================================
+
+Kaynak özetler:
+  - outputs/results/advisor_suite/advisor_summary.txt
+  - outputs/results/duzeltilmis_dagilim.txt
+  - outputs/results/external_validation/results.json
+
+
+1) Protokol
+-----------
+- Pacemaker 102/104/107/217 çıkarıldı; DS2 = test only
+- DS1 + kayıt 124; train/val patient-wise, S/F-aware (val S=201, F=30)
+- Toplam 100.680 atım → Train 42.069 / Val 8.923 / Test 49.688
+- Birincil metrik: macro-F1
+
+
+2) Advisor suite (seeds 42/43/44, 8 epoch)
+------------------------------------------
+Ablasyon (macro-F1 mean±std):
+  2d_clinical     0.470 ± 0.017   ← en iyi
+  clinical        0.416 ± 0.003
+  1d_clinical     0.406 ± 0.018
+  1d_2d_clinical  0.393 ± 0.055
+  1d / 2d / 1d_2d ~0.32–0.34
+
+Fusion:
+  attention 0.426 > gated 0.398 > concat 0.393
+  Final model: attention, seed 44
+  Checkpoint: outputs/checkpoints/heartx_suite_fusion_attention_seed44.pt
+
+Imbalance (en iyi):
+  balanced CE + SMOTE → F1≈0.451 (F1_S≈0.47); F hâlâ zayıf
+
+Final 5-sınıf test (attention seed44):
+  Macro-F1≈0.445  Acc≈0.95
+  N≈0.97  V≈0.85  S≈0.40  F≈0  Q≈0
+
+
+3) Dış doğrulama (binary normal/abnormal proxy)
+-----------------------------------------------
+  MIT-BIH proxy: F1=0.867  Acc=0.953
+  PTB-XL proxy:  F1=0.401  Acc=0.574
+  Not: AAMI ↔ PTB-XL birebir eşleşmez.
+
+
+4) XAI
+------
+  outputs/figures/mm_gradcam_final/
+  outputs/figures/fusion_weights_final/
+
+
+5) Açık noktalar
+----------------
+- F ve Q öğrenilmiyor; PTB-XL proxy zayıf
+- Sonraki: F odaklı imbalance/loss; dış doğrulama sınırını tezde net yazmak
