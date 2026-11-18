@@ -54,12 +54,33 @@ def _predict(model, loader, device):
 
 
 def _binary_metrics(y_true_proxy, y_pred_proxy):
+    from sklearn.metrics import (
+        confusion_matrix,
+        precision_recall_fscore_support,
+    )
+
+    labels = [0, 1]
+    p, r, f1, support = precision_recall_fscore_support(
+        y_true_proxy, y_pred_proxy, labels=labels, zero_division=0
+    )
+    per_class = {}
+    for i, name in enumerate(PROXY_CLASSES):
+        per_class[name] = {
+            "precision": float(p[i]),
+            "recall": float(r[i]),
+            "f1": float(f1[i]),
+            "support": int(support[i]),
+        }
+    cm = confusion_matrix(y_true_proxy, y_pred_proxy, labels=labels)
     return {
         "f1_macro": float(f1_score(y_true_proxy, y_pred_proxy, average="macro", zero_division=0)),
         "accuracy": float(accuracy_score(y_true_proxy, y_pred_proxy)),
+        "per_class": per_class,
+        "confusion_matrix": cm.tolist(),
         "report": classification_report(
             y_true_proxy,
             y_pred_proxy,
+            labels=labels,
             target_names=PROXY_CLASSES,
             zero_division=0,
             digits=4,
@@ -171,23 +192,33 @@ def main() -> None:
     print(f"macro-F1={ptb_metrics['f1_macro']:.4f}  acc={ptb_metrics['accuracy']:.4f}")
     print(ptb_metrics["report"])
 
-    table = pd.DataFrame(
-        [
-            {
-                "set": "MIT-BIH internal (proxy)",
-                "f1_macro": mit_metrics["f1_macro"],
-                "accuracy": mit_metrics["accuracy"],
-            },
-            {
-                "set": "PTB-XL external (proxy)",
-                "f1_macro": ptb_metrics["f1_macro"],
-                "accuracy": ptb_metrics["accuracy"],
-            },
-        ]
-    )
+    table_rows = []
+    for set_name, metrics in (
+        ("MIT-BIH internal (proxy)", mit_metrics),
+        ("PTB-XL external (proxy)", ptb_metrics),
+    ):
+        row = {
+            "set": set_name,
+            "f1_macro": metrics["f1_macro"],
+            "accuracy": metrics["accuracy"],
+        }
+        for cls, stats in metrics["per_class"].items():
+            row[f"precision_{cls}"] = stats["precision"]
+            row[f"recall_{cls}"] = stats["recall"]
+            row[f"f1_{cls}"] = stats["f1"]
+            row[f"support_{cls}"] = stats["support"]
+        table_rows.append(row)
+    table = pd.DataFrame(table_rows)
     out_dir = RESULTS_DIR / "external_validation"
     out_dir.mkdir(parents=True, exist_ok=True)
     table.to_csv(out_dir / "external_validation.csv", index=False)
+    for prefix, metrics in (("mitbih_proxy", mit_metrics), ("ptbxl_proxy", ptb_metrics)):
+        pd.DataFrame(
+            metrics["confusion_matrix"], index=PROXY_CLASSES, columns=PROXY_CLASSES
+        ).to_csv(out_dir / f"{prefix}_confusion_matrix.csv")
+        pd.DataFrame(
+            [{"class": k, **v} for k, v in metrics["per_class"].items()]
+        ).to_csv(out_dir / f"{prefix}_per_class_metrics.csv", index=False)
     (out_dir / "mapping_notes.txt").write_text(mapping_report())
     (out_dir / "results.json").write_text(
         json.dumps(

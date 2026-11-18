@@ -144,13 +144,17 @@ class MMGradCAMHooked(MMGradCAM):
 
             return hook
 
-        # Find last Conv1d / Conv2d more robustly
-        last_1d = [m for m in model.stream_1d.features.modules() if isinstance(m, torch.nn.Conv1d)][-1]
-        last_2d = [m for m in model.stream_2d.features.modules() if isinstance(m, torch.nn.Conv2d)][-1]
-        self._handles.append(last_1d.register_forward_hook(_save_act("1d")))
-        self._handles.append(last_1d.register_full_backward_hook(_save_grad("1d")))
-        self._handles.append(last_2d.register_forward_hook(_save_act("2d")))
-        self._handles.append(last_2d.register_full_backward_hook(_save_grad("2d")))
+        # Register only the streams this ablation actually owns.
+        stream_1d = getattr(model, "stream_1d", None)
+        stream_2d = getattr(model, "stream_2d", None)
+        if stream_1d is not None:
+            last_1d = [m for m in stream_1d.features.modules() if isinstance(m, torch.nn.Conv1d)][-1]
+            self._handles.append(last_1d.register_forward_hook(_save_act("1d")))
+            self._handles.append(last_1d.register_full_backward_hook(_save_grad("1d")))
+        if stream_2d is not None:
+            last_2d = [m for m in stream_2d.features.modules() if isinstance(m, torch.nn.Conv2d)][-1]
+            self._handles.append(last_2d.register_forward_hook(_save_act("2d")))
+            self._handles.append(last_2d.register_full_backward_hook(_save_grad("2d")))
 
     def close(self) -> None:
         for h in self._handles:
@@ -174,23 +178,29 @@ class MMGradCAMHooked(MMGradCAM):
         cls = pred if target_class is None else target_class
         logits[0, cls].backward()
 
-        act_1d = self._acts["1d"]
-        grad_1d = self._grads["1d"]
-        weights = grad_1d.mean(dim=2, keepdim=True)
-        cam_1d = F.relu((weights * act_1d).sum(dim=1, keepdim=True))
-        cam_1d = F.interpolate(
-            cam_1d, size=x_1d.shape[-1], mode="linear", align_corners=False
-        )
-        cam_1d = _normalize_map(cam_1d[0, 0].detach().cpu().numpy())
+        if "1d" in self._acts and "1d" in self._grads:
+            act_1d = self._acts["1d"]
+            grad_1d = self._grads["1d"]
+            weights = grad_1d.mean(dim=2, keepdim=True)
+            cam_1d = F.relu((weights * act_1d).sum(dim=1, keepdim=True))
+            cam_1d = F.interpolate(
+                cam_1d, size=x_1d.shape[-1], mode="linear", align_corners=False
+            )
+            cam_1d = _normalize_map(cam_1d[0, 0].detach().cpu().numpy())
+        else:
+            cam_1d = np.zeros(x_1d.shape[-1], dtype=np.float32)
 
-        act_2d = self._acts["2d"]
-        grad_2d = self._grads["2d"]
-        weights = grad_2d.mean(dim=(2, 3), keepdim=True)
-        cam_2d = F.relu((weights * act_2d).sum(dim=1, keepdim=True))
-        cam_2d = F.interpolate(
-            cam_2d, size=x_2d.shape[-2:], mode="bilinear", align_corners=False
-        )
-        cam_2d = _normalize_map(cam_2d[0, 0].detach().cpu().numpy())
+        if "2d" in self._acts and "2d" in self._grads:
+            act_2d = self._acts["2d"]
+            grad_2d = self._grads["2d"]
+            weights = grad_2d.mean(dim=(2, 3), keepdim=True)
+            cam_2d = F.relu((weights * act_2d).sum(dim=1, keepdim=True))
+            cam_2d = F.interpolate(
+                cam_2d, size=x_2d.shape[-2:], mode="bilinear", align_corners=False
+            )
+            cam_2d = _normalize_map(cam_2d[0, 0].detach().cpu().numpy())
+        else:
+            cam_2d = np.zeros(x_2d.shape[-2:], dtype=np.float32)
 
         return {
             "cam_1d": cam_1d,

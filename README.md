@@ -75,6 +75,22 @@ python scripts/analyze_fusion_weights.py --checkpoint outputs/checkpoints/<run>.
 python scripts/external_validation.py --checkpoint outputs/checkpoints/<run>.pt
 ```
 
+## Final model selection (DS1 only)
+
+DS2 is not used to choose the model, the fusion, the imbalance method, or the seed.
+Record 124 is outside Chazal DS1/DS2 and is excluded from selection and from the final fit.
+The three candidates are compared with the same patient-wise folds and the same seeds.
+The imbalance method attached to the third candidate is the one with the best DS1
+cross-validation macro-F1 on the attention model.
+
+```bash
+python scripts/select_final_model.py --epochs 4 --folds 4 --seeds 42 43 44
+```
+
+Tables land in `outputs/results/final_selection/`. The locked checkpoint is then
+retrained on DS1 and evaluated once on DS2. External validation, fusion weights,
+and MM-GradCAM are regenerated from that checkpoint.
+
 ## Outputs
 
 - `outputs/processed/mitbih/` — npz, `class_distribution.csv|png`, `meta.json`

@@ -101,6 +101,13 @@ def evaluate(
     return metrics
 
 
+def serializable_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    """Drop large arrays so metrics can be written to JSON."""
+    skip = {"y_true", "y_pred"}
+    out = {k: v for k, v in metrics.items() if k not in skip}
+    return out
+
+
 def save_eval_artifacts(
     metrics: dict[str, Any],
     class_names: list[str],
@@ -154,6 +161,7 @@ def fit(
     class_weights: torch.Tensor | None = None,
     loss_name: str = "ce",
     focal_gamma: float = 2.0,
+    extra_checkpoint: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Train with **macro-F1** as the checkpoint / LR-scheduler criterion."""
     criterion = build_criterion(loss_name, class_weights, focal_gamma=focal_gamma)
@@ -184,17 +192,19 @@ def fit(
         )
         if val_metrics["f1_macro"] > best_f1:
             best_f1 = val_metrics["f1_macro"]
-            torch.save(
-                {
-                    "model_state": model.state_dict(),
-                    "epoch": epoch,
-                    "val_f1_macro": best_f1,
-                    "val_accuracy": val_metrics["accuracy"],
-                    "class_names": class_names,
-                    "primary_metric": "f1_macro",
-                },
-                checkpoint_path,
-            )
+            payload = {
+                "model_state": model.state_dict(),
+                "epoch": epoch,
+                "val_f1_macro": best_f1,
+                "val_accuracy": val_metrics["accuracy"],
+                "val_per_class": val_metrics.get("per_class"),
+                "val_confusion_matrix": val_metrics.get("confusion_matrix"),
+                "class_names": class_names,
+                "primary_metric": "f1_macro",
+            }
+            if extra_checkpoint:
+                payload.update(extra_checkpoint)
+            torch.save(payload, checkpoint_path)
             print(f"  saved best macro-F1={best_f1:.4f} -> {checkpoint_path}", flush=True)
 
     return history

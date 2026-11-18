@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from heartx.data.patient_split import (  # noqa: E402
     masks_from_split,
+    patient_wise_cv_folds,
     patient_wise_split,
 )
 
@@ -52,3 +53,20 @@ def test_masks_cover_all_once():
     )
     tr, va, te = masks_from_split(80, split)
     assert (tr.astype(int) + va.astype(int) + te.astype(int) == 1).all()
+
+
+def test_cv_folds_exclude_held_out_groups():
+    groups = np.array([f"g{i // 8}" for i in range(80)])
+    y = np.array([i % 5 for i in range(80)])
+    folds = patient_wise_cv_folds(
+        y, groups, n_splits=4, seed=42, exclude_groups=["g0", "g1"]
+    )
+    assert len(folds) == 4
+    seen_val = []
+    for train_idx, val_idx, tr_g, va_g in folds:
+        assert set(map(str, tr_g)).isdisjoint(set(map(str, va_g)))
+        assert set(map(str, tr_g)).isdisjoint({"g0", "g1"})
+        assert set(map(str, va_g)).isdisjoint({"g0", "g1"})
+        seen_val.extend(map(str, va_g))
+    assert set(seen_val).isdisjoint({"g0", "g1"})
+    assert len(set(seen_val)) == 8

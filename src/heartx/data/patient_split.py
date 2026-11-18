@@ -142,6 +142,68 @@ def masks_from_split(n: int, split: SplitResult) -> tuple[np.ndarray, np.ndarray
     return train_mask, val_mask, test_mask
 
 
+def patient_wise_cv_folds(
+    y: np.ndarray,
+    groups: np.ndarray,
+    n_splits: int = 4,
+    seed: int = 42,
+    exclude_groups: np.ndarray | list | set | None = None,
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    """
+    Patient/record-wise K-fold splits.
+
+    Returns a list of ``(train_idx, val_idx, train_groups, val_groups)``.
+    Groups listed in ``exclude_groups`` (e.g. MIT-BIH DS2) are omitted
+    entirely so they cannot leak into model selection.
+    """
+    y = np.asarray(y)
+    groups = np.asarray(groups)
+    n = len(y)
+    if len(groups) != n:
+        raise ValueError("y and groups must have the same length")
+    if n_splits < 2:
+        raise ValueError("n_splits must be >= 2")
+
+    idx_all = np.arange(n)
+    if exclude_groups is not None:
+        blocked = {str(g) for g in exclude_groups}
+        keep = np.array([str(g) not in blocked for g in groups])
+        idx_all = idx_all[keep]
+        if len(idx_all) == 0:
+            raise ValueError("No samples remain after excluding groups")
+
+    cv_groups = groups[idx_all]
+    uniq = np.unique(cv_groups)
+    if len(uniq) < n_splits:
+        raise ValueError(
+            f"Need >= {n_splits} groups for CV, found {len(uniq)}"
+        )
+
+    rng = np.random.default_rng(seed)
+    shuffled = np.array(uniq, dtype=object)
+    rng.shuffle(shuffled)
+    fold_of = {str(g): int(i % n_splits) for i, g in enumerate(shuffled)}
+
+    folds: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    for k in range(n_splits):
+        val_mask = np.array([fold_of[str(g)] == k for g in cv_groups])
+        train_mask = ~val_mask
+        if not val_mask.any() or not train_mask.any():
+            raise RuntimeError(f"Fold {k} is empty; reduce n_splits")
+        train_idx = idx_all[train_mask]
+        val_idx = idx_all[val_mask]
+        tr_g = groups[train_idx]
+        va_g = groups[val_idx]
+        if set(map(str, tr_g)) & set(map(str, va_g)):
+            raise RuntimeError(f"Fold {k} has train/val group overlap")
+        if exclude_groups is not None:
+            blocked = {str(g) for g in exclude_groups}
+            if blocked & set(map(str, tr_g)) or blocked & set(map(str, va_g)):
+                raise RuntimeError(f"Fold {k} includes excluded groups")
+        folds.append((train_idx, val_idx, tr_g, va_g))
+    return folds
+
+
 def log_split_summary(name: str, split: SplitResult, groups: np.ndarray) -> None:
     s = split.summary()
     print(f"=== Split summary ({name}) ===", flush=True)
