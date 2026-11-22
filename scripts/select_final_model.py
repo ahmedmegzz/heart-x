@@ -2,7 +2,8 @@
 """
 Lock the HEART-X final configuration from DS1 only, then test DS2 once.
 
-Selection never reads DS2 and never uses record 124 (outside Chazal DS1/DS2).
+Selection never reads DS2. Record 124 stays inside DS1, matching the locked
+study protocol (Chazal DS1). It is not part of DS2.
 
 Protocol, fixed before the DS2 test
 ------------------------------------
@@ -24,6 +25,9 @@ Protocol, fixed before the DS2 test
    once. External validation, fusion weights, and MM-GradCAM are regenerated
    from this checkpoint.
 
+The epoch budget defaults to 8, the same budget as the completed advisor
+suite. Every candidate in this script shares it.
+
 F and Q are never dropped from the tables.
 """
 
@@ -39,6 +43,7 @@ from pathlib import Path
 
 os.environ.setdefault("OMP_NUM_THREADS", "8")
 os.environ.setdefault("MKL_NUM_THREADS", "8")
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 import numpy as np
 import pandas as pd
@@ -156,7 +161,7 @@ def train_val_once(
     checkpoint: Path,
 ) -> dict:
     set_seed(seed)
-    device = torch.device("cpu")
+    device = _device()
     x1_tr, x2_tr, c_tr, y_tr = _slice(data, train_idx)
     x1_va, x2_va, c_va, y_va = _slice(data, val_idx)
     fs = float(data["fs"]) if "fs" in data.files else 360.0
@@ -201,6 +206,7 @@ def train_val_once(
             "loss": loss,
             "sampler": sampler,
             "seed": seed,
+            "epochs": epochs,
         },
     )
     state = torch.load(checkpoint, map_location=device, weights_only=False)
@@ -213,6 +219,8 @@ def train_val_once(
         "loss": loss,
         "sampler": sampler,
         "seed": seed,
+        "epochs": epochs,
+        "device": str(device),
         "best_epoch": int(state.get("epoch", -1)),
         "f1_macro": metrics["f1_macro"],
         "accuracy": metrics["accuracy"],
@@ -299,9 +307,68 @@ def _write_cm(cm: np.ndarray, class_names: list[str], path: Path, title: str) ->
     plot_confusion_matrix(cm, class_names, path.with_suffix(".png"), title=title)
 
 
+def _payload_from_checkpoint(path: Path, epochs: int) -> dict | None:
+    """Rebuild a run record from the best-epoch metrics stored in a checkpoint."""
+    state = torch.load(path, map_location="cpu", weights_only=False)
+    # Older checkpoints omitted the budget and were fit on folds that dropped
+    # record 124. Do not reuse them.
+    if int(state.get("epochs", -1)) != int(epochs):
+        return None
+    if "val_f1_macro" not in state or "val_per_class" not in state:
+        return None
+    per_in = state["val_per_class"]
+    class_names = [str(c) for c in state.get("class_names", list(per_in))]
+    per = {}
+    for name in class_names:
+        stats = per_in[name]
+        per[name] = {
+            "precision": float(stats["precision"]),
+            "recall": float(stats["recall"]),
+            "f1": float(stats["f1"]),
+            "support": int(stats["support"]),
+            "specificity": float(stats.get("specificity", 0.0)),
+        }
+    cm = np.asarray(state["val_confusion_matrix"], dtype=np.int64).tolist()
+    prec = [per[c]["precision"] for c in class_names]
+    rec = [per[c]["recall"] for c in class_names]
+    return {
+        "model": str(state["model_name"]),
+        "fusion": str(state["fusion"]),
+        "class_weight": str(state["class_weight"]),
+        "loss": str(state["loss"]),
+        "sampler": str(state["sampler"]),
+        "seed": int(state["seed"]),
+        "epochs": int(epochs),
+        "device": "resumed-checkpoint",
+        "best_epoch": int(state.get("epoch", -1)),
+        "f1_macro": float(state["val_f1_macro"]),
+        "accuracy": float(state["val_accuracy"]),
+        "precision_macro": float(np.mean(prec)) if prec else float("nan"),
+        "recall_macro": float(np.mean(rec)) if rec else float("nan"),
+        "per_class": per,
+        "confusion_matrix": cm,
+        "history_val_f1": [],
+        "checkpoint_val_f1": float(state["val_f1_macro"]),
+        "resumed_from_checkpoint": True,
+        "run": path.stem,
+    }
+
+
 def _py() -> Path:
-    p = ROOT / ".venv" / "bin" / "python"
-    return p if p.exists() else Path(sys.executable)
+    for rel in (
+        Path(".venv") / "Scripts" / "python.exe",
+        Path(".venv") / "bin" / "python",
+    ):
+        candidate = ROOT / rel
+        if candidate.exists():
+            return candidate
+    return Path(sys.executable)
+
+
+def _device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
 
 
 def _run_logged(cmd: list[str]) -> None:
@@ -312,7 +379,7 @@ def _run_logged(cmd: list[str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=PROCESSED_DIR / "mitbih" / "mitbih_dual.npz")
-    parser.add_argument("--epochs", type=int, default=4)
+    parser.add_argument("--epochs", type=int, default=8)
     parser.add_argument("--folds", type=int, default=4)
     parser.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44])
     parser.add_argument("--batch-size", type=int, default=128)
@@ -320,6 +387,7 @@ def main() -> None:
     args = parser.parse_args()
 
     torch.set_num_threads(8)
+    print(f"Device: {_device()}", flush=True)
     out_dir = RESULTS_DIR / "final_selection"
     run_dir = out_dir / "runs"
     fig_dir = FIGURE_DIR / "final_selection"
@@ -339,7 +407,8 @@ def main() -> None:
     if not ds1.issubset(present):
         raise RuntimeError(f"DS1 records missing from npz: {sorted(ds1 - present)}")
     outside = present - ds1
-    # DS2 and record 124 (and anything else) stay out of selection.
+    # Anything outside DS1 (DS2, and any other record) stays out of selection.
+    # Record 124 is inside DS1 and therefore stays in.
     folds = patient_wise_cv_folds(
         y_all, groups, n_splits=args.folds, seed=args.fold_seed, exclude_groups=sorted(outside)
     )
@@ -348,8 +417,8 @@ def main() -> None:
         tr_set, va_set = set(map(str, tr_g)), set(map(str, va_g))
         if not tr_set.issubset(ds1) or not va_set.issubset(ds1):
             raise RuntimeError(f"Fold {k} left DS1")
-        if tr_set & ds2 or va_set & ds2 or "124" in tr_set or "124" in va_set:
-            raise RuntimeError(f"Fold {k} contains DS2 or record 124")
+        if tr_set & ds2 or va_set & ds2:
+            raise RuntimeError(f"Fold {k} contains DS2")
         fold_meta.append({
             "fold": k,
             "n_train": int(len(tr)),
@@ -365,13 +434,40 @@ def main() -> None:
             f"val {sorted(va_set)} / {len(va)} beats",
             flush=True,
         )
+    covered = set()
+    for meta in fold_meta:
+        covered.update(meta["val_records"])
+    if covered != ds1:
+        raise RuntimeError(f"CV did not cover DS1 exactly: missing {sorted(ds1 - covered)}")
+    (out_dir / "protocol.json").write_text(json.dumps({
+        "epochs": args.epochs,
+        "folds": args.folds,
+        "seeds": list(args.seeds),
+        "batch_size": args.batch_size,
+        "fold_seed": args.fold_seed,
+        "learning_rate": LEARNING_RATE,
+        "weight_decay": WEIGHT_DECAY,
+        "tie_margin": TIE_MARGIN,
+        "reference_imbalance": {
+            "class_weight": REFERENCE[0],
+            "loss": REFERENCE[1],
+            "sampler": REFERENCE[2],
+        },
+        "ds2_used_for_selection": False,
+        "record_124_in_ds1": True,
+        "epoch_budget_note": (
+            "Eight epochs matches the completed advisor-suite budget. "
+            "All candidates in this script share it."
+        ),
+        "record_124": "included in DS1; excluded from DS2",
+    }, indent=2))
     (out_dir / "folds.json").write_text(json.dumps({
         "ds1": sorted(ds1),
         "excluded_from_selection": sorted(outside),
         "folds": fold_meta,
         "note": (
-            "Record 124 is not part of Chazal DS1 or DS2. "
-            "It is excluded from model selection and from the final DS1 fit."
+            "Record 124 is part of this study's DS1 and is included in "
+            "patient-wise selection and in the final DS1 fit. DS2 is excluded."
         ),
     }, indent=2))
 
@@ -380,7 +476,17 @@ def main() -> None:
     def cached(name: str) -> dict | None:
         path = run_dir / f"{name}.json"
         if path.exists():
-            return json.loads(path.read_text())
+            hit = json.loads(path.read_text())
+            if int(hit.get("epochs", -1)) != int(args.epochs):
+                print(
+                    f"ignore {name}: cached epochs={hit.get('epochs')} "
+                    f"!= requested {args.epochs}",
+                    flush=True,
+                )
+            else:
+                return hit
+        # A .pt file is written after every improved epoch, including runs that
+        # were interrupted. Only the JSON written after the last epoch counts.
         return None
 
     def execute(name: str, train_idx, val_idx, model, fusion, cw, loss, sampler, seed) -> dict:
@@ -453,8 +559,10 @@ def main() -> None:
         ("attention", "1d_2d_clinical", "attention", ref_cw, ref_loss, ref_sampler),
         ("attention_imbalance", "1d_2d_clinical", "attention", imb_cw, imb_loss, imb_sampler),
     ]
-    # Identical recipe: do not train it twice.
-    if (imb_cw, imb_loss, imb_sampler) == REFERENCE:
+    # Identical recipe: do not train it twice. The comparison table still
+    # lists the third candidate, with the same DS1 CV numbers.
+    identical_to_reference = (imb_cw, imb_loss, imb_sampler) == REFERENCE
+    if identical_to_reference:
         candidates = candidates[:2]
 
     cmp_payloads = []
@@ -464,6 +572,11 @@ def main() -> None:
                 name = f"{_recipe_name(model, fusion, cw, loss, sampler)}__fold{k}__seed{seed}"
                 payload = execute(name, tr, va, model, fusion, cw, loss, sampler, seed)
                 cmp_payloads.append(payload | {"fold": k, "candidate": cand_name})
+
+    if identical_to_reference:
+        for payload in list(cmp_payloads):
+            if payload["candidate"] == "attention":
+                cmp_payloads.append(dict(payload, candidate="attention_imbalance"))
 
     cmp_rows = [
         _flatten_run(p, fold=p["fold"], candidate=p["candidate"], phase="candidate_cv")
@@ -505,7 +618,7 @@ def main() -> None:
         "f1_mean": float(final["f1_mean"]),
         "f1_std": float(final["f1_std"]),
         "ds2_used_for_selection": False,
-        "record_124_used_for_selection": False,
+        "record_124_in_ds1": True,
     }
     (out_dir / "model_decision.json").write_text(json.dumps(decision, indent=2))
     print(
@@ -540,7 +653,7 @@ def main() -> None:
         ds2_idx = np.where(np.isin(groups, list(ds2)))[0]
         if set(groups[ds2_idx]) - ds2:
             raise RuntimeError("DS2 index set is not pure")
-        device = torch.device("cpu")
+        device = _device()
         x1, x2, clin, yy = _slice(data, ds2_idx)
         loader = _loader(x1, x2, yy, clin, str(final["model"]), args.batch_size, False)
         model = build_heartx_model(
@@ -616,23 +729,53 @@ def main() -> None:
                 "--out-dir", str(FIGURE_DIR / "mm_gradcam"),
             ],
         ]
+        ptbxl_path = PROCESSED_DIR / "ptbxl" / "ptbxl_dual.npz"
+        skipped = []
         for cmd in commands:
+            if cmd[1].endswith("external_validation.py") and not ptbxl_path.exists():
+                note = (
+                    "External validation was not run because "
+                    f"{ptbxl_path} is not on disk. "
+                    "The DS2 test above is unaffected."
+                )
+                (out_dir / "external_validation_skipped.txt").write_text(
+                    note + "\n", encoding="utf-8"
+                )
+                skipped.append("external_validation")
+                print("\nskip external validation:", note, flush=True)
+                continue
             print("\n>>>", " ".join(cmd), flush=True)
             subprocess.run(cmd, check=True, cwd=str(ROOT), env=env_note)
-        marker.write_text(json.dumps({"checkpoint": str(ckpt)}, indent=2))
+        marker.write_text(json.dumps({
+            "checkpoint": str(ckpt),
+            "skipped": skipped,
+        }, indent=2))
 
-    _write_thesis_report(out_dir, fig_dir, class_names, screen_sum, cmp_sum, final, final_metrics)
+    _write_thesis_report(
+        out_dir, fig_dir, class_names, screen_sum, cmp_sum, final, final_metrics,
+        epochs=args.epochs,
+    )
     print(f"\nWrote {out_dir / 'final_selection_report.txt'}", flush=True)
 
 
-def _write_thesis_report(out_dir, fig_dir, class_names, screen_sum, cmp_sum, final, test) -> None:
+def _write_thesis_report(
+    out_dir, fig_dir, class_names, screen_sum, cmp_sum, final, test, epochs: int = 8,
+) -> None:
     lines = []
     lines.append("HEART-X final model selection")
     lines.append("==============================")
     lines.append("")
     lines.append("DS2 was not used to choose the model, fusion, imbalance method, or seed.")
-    lines.append("Record 124 is outside Chazal DS1/DS2 and was excluded from selection and from the DS1 refit.")
+    lines.append("Record 124 is part of DS1 and was included in selection and in the DS1 refit.")
     lines.append("Primary metric: macro-F1. Accuracy is secondary. F and Q stay in every average.")
+    lines.append(
+        f"Epoch budget: {epochs} (the completed advisor suite used 8). "
+        "Batch size, learning rate, folds, and seeds are shared by every candidate."
+    )
+    lines.append(
+        "Binary-proxy MIT-BIH numbers written by external validation use the same DS2 records. "
+        "They are produced after the checkpoint is locked and are not used for selection."
+    )
     lines.append("Multiple runs are reported as mean ± sample standard deviation (ddof=1).")
     lines.append("")
     lines.append("Imbalance screen (1D+2D+clinical+attention, DS1 patient-wise CV, seed 42)")
@@ -710,7 +853,7 @@ def _write_thesis_report(out_dir, fig_dir, class_names, screen_sum, cmp_sum, fin
     lines.append(f"  CV sums: {fig_dir}")
     lines.append(f"Checkpoint: {test['checkpoint']}")
     text = "\n".join(lines) + "\n"
-    (out_dir / "final_selection_report.txt").write_text(text)
+    (out_dir / "final_selection_report.txt").write_text(text, encoding="utf-8")
     # Thesis-facing numeric table of the single DS2 test.
     pd.DataFrame([
         {"metric": "macro_f1", "value": test["f1_macro"]},

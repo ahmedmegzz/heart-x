@@ -1,14 +1,62 @@
 {
-  "checkpoint": "/home/kimbra/Documents/GitHub/tez/outputs/checkpoints/heartx_suite_fusion_attention_seed44.pt",
+  "checkpoint": "outputs\\checkpoints\\heartx_final.pt",
   "mitbih": {
-    "f1_macro": 0.8667018611730022,
-    "accuracy": 0.952664627274191,
-    "report": "              precision    recall  f1-score   support\n\n      normal     0.9617    0.9861    0.9737     44236\n    abnormal     0.8576    0.6818    0.7597      5452\n\n    accuracy                         0.9527     49688\n   macro avg     0.9097    0.8339    0.8667     49688\nweighted avg     0.9503    0.9527    0.9503     49688\n"
+    "f1_macro": 0.7452166732035972,
+    "accuracy": 0.877153437449686,
+    "per_class": {
+      "normal": {
+        "precision": 0.962677150067948,
+        "recall": 0.896780902432408,
+        "f1": 0.9285613969383456,
+        "support": 44236
+      },
+      "abnormal": {
+        "precision": 0.46155660377358493,
+        "recall": 0.7179016874541453,
+        "f1": 0.5618719494688487,
+        "support": 5452
+      }
+    },
+    "confusion_matrix": [
+      [
+        39670,
+        4566
+      ],
+      [
+        1538,
+        3914
+      ]
+    ],
+    "report": "              precision    recall  f1-score   support\n\n      normal     0.9627    0.8968    0.9286     44236\n    abnormal     0.4616    0.7179    0.5619      5452\n\n    accuracy                         0.8772     49688\n   macro avg     0.7121    0.8073    0.7452     49688\nweighted avg     0.9077    0.8772    0.8883     49688\n"
   },
   "ptbxl": {
-    "f1_macro": 0.4014457831325301,
-    "accuracy": 0.5740740740740741,
-    "report": "              precision    recall  f1-score   support\n\n      normal     0.5660    1.0000    0.7229        30\n    abnormal     1.0000    0.0417    0.0800        24\n\n    accuracy                         0.5741        54\n   macro avg     0.7830    0.5208    0.4014        54\nweighted avg     0.7589    0.5741    0.4372        54\n"
+    "f1_macro": 0.5602453102453102,
+    "accuracy": 0.5810276679841897,
+    "per_class": {
+      "normal": {
+        "precision": 0.5804597701149425,
+        "recall": 0.753731343283582,
+        "f1": 0.6558441558441559,
+        "support": 134
+      },
+      "abnormal": {
+        "precision": 0.5822784810126582,
+        "recall": 0.3865546218487395,
+        "f1": 0.46464646464646464,
+        "support": 119
+      }
+    },
+    "confusion_matrix": [
+      [
+        101,
+        33
+      ],
+      [
+        73,
+        46
+      ]
+    ],
+    "report": "              precision    recall  f1-score   support\n\n      normal     0.5805    0.7537    0.6558       134\n    abnormal     0.5823    0.3866    0.4646       119\n\n    accuracy                         0.5810       253\n   macro avg     0.5814    0.5701    0.5602       253\nweighted avg     0.5813    0.5810    0.5659       253\n"
   },
   "mapping": "MIT-BIH AAMI -> proxy:\n  N -> normal\n  S -> abnormal\n  V -> abnormal\n  F -> abnormal\n  Q -> abnormal\nPTB-XL superclass -> proxy:\n  NORM -> normal\n  MI -> abnormal\n  STTC -> abnormal\n  CD -> abnormal\n  HYP -> abnormal\n\nLimitation: beat-level arrhythmia classes cannot be mapped 1:1 onto\nPTB-XL diagnostic superclasses; evaluation is binary normal/abnormal proxy."
 }

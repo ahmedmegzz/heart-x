@@ -1,0 +1,7 @@
+{
+  "checkpoint": "outputs/checkpoints/heartx_final.pt",
+  "external_validation": "outputs/results/external_validation",
+  "fusion_weights": "outputs/results/fusion_weights",
+  "mm_gradcam": "outputs/figures/mm_gradcam",
+  "skipped": []
+}

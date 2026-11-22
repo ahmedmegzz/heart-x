@@ -142,7 +142,6 @@ def masks_from_split(n: int, split: SplitResult) -> tuple[np.ndarray, np.ndarray
     return train_mask, val_mask, test_mask
 
 
-<<<<<<< HEAD
 def patient_wise_cv_folds(
     y: np.ndarray,
     groups: np.ndarray,
@@ -203,7 +202,8 @@ def patient_wise_cv_folds(
                 raise RuntimeError(f"Fold {k} includes excluded groups")
         folds.append((train_idx, val_idx, tr_g, va_g))
     return folds
-=======
+
+
 def _class_counts(y: np.ndarray, n_classes: int) -> np.ndarray:
     return np.bincount(y.astype(int), minlength=n_classes)
 
@@ -314,7 +314,6 @@ def minority_aware_ds1_val_split(
     # preserve missing-test info from base
     best._missing_test_classes = getattr(base, "_missing_test_classes", [])  # type: ignore[attr-defined]
     return best
->>>>>>> c3e9d78ed97af81b116c3c9c5f37a1fdfab9bb8c
 
 
 def log_split_summary(name: str, split: SplitResult, groups: np.ndarray) -> None:

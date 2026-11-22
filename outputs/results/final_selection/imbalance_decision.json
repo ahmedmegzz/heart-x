@@ -1,0 +1,13 @@
+{
+  "rule": "max mean validation macro-F1 across DS1 folds; within 0.01, lower std",
+  "seed": 42,
+  "folds": 4,
+  "chosen": {
+    "class_weight": "balanced",
+    "loss": "ce",
+    "sampler": "none",
+    "f1_mean": 0.4252786806875219,
+    "f1_std": 0.09106733119497326
+  },
+  "ds2_used": false
+}

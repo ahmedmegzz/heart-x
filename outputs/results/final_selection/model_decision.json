@@ -1,0 +1,14 @@
+{
+  "rule": "max mean DS1 CV macro-F1 over folds and seeds; within 0.01, lower std",
+  "tie_margin": 0.01,
+  "chosen_candidate": "2d_clinical",
+  "model": "2d_clinical",
+  "fusion": "concat",
+  "class_weight": "balanced",
+  "loss": "ce",
+  "sampler": "none",
+  "f1_mean": 0.4291427905927514,
+  "f1_std": 0.07786291271714749,
+  "ds2_used_for_selection": false,
+  "record_124_in_ds1": true
+}

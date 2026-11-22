@@ -1,0 +1,83 @@
+HEART-X final model selection
+==============================
+
+DS2 was not used to choose the model, fusion, imbalance method, or seed.
+Record 124 is part of DS1 and was included in selection and in the DS1 refit.
+Primary metric: macro-F1. Accuracy is secondary. F and Q stay in every average.
+Epoch budget: 8 (the completed advisor suite used 8). Batch size, learning rate, folds, and seeds are shared by every candidate.
+Binary-proxy MIT-BIH numbers written by external validation use the same DS2 records. They are produced after the checkpoint is locked and are not used for selection.
+Multiple runs are reported as mean ± sample standard deviation (ddof=1).
+
+Imbalance screen (1D+2D+clinical+attention, DS1 patient-wise CV, seed 42)
+-------------------------------------------------------------------------------
+class_weight  loss           sampler  n_runs f1_macro_meanstd accuracy_meanstd precision_N_meanstd recall_N_meanstd    f1_N_meanstd precision_S_meanstd recall_S_meanstd    f1_S_meanstd precision_V_meanstd recall_V_meanstd    f1_V_meanstd precision_F_meanstd recall_F_meanstd    f1_F_meanstd precision_Q_meanstd recall_Q_meanstd    f1_Q_meanstd
+    balanced focal              none       4  0.4305 ± 0.1169  0.9235 ± 0.0423     0.9827 ± 0.0085  0.9438 ± 0.0533 0.9622 ± 0.0257     0.3764 ± 0.4561  0.3011 ± 0.2878 0.3049 ± 0.3095     0.7650 ± 0.2358  0.8354 ± 0.1393 0.7863 ± 0.1627     0.1662 ± 0.3295  0.1352 ± 0.1562 0.0990 ± 0.1923     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+    balanced    ce              none       4  0.4253 ± 0.0911  0.9243 ± 0.0504     0.9825 ± 0.0141  0.9438 ± 0.0623 0.9617 ± 0.0288     0.5297 ± 0.3795  0.3593 ± 0.3604 0.3388 ± 0.3701     0.7912 ± 0.2106  0.8838 ± 0.0939 0.8239 ± 0.1337     0.2504 ± 0.4998  0.0173 ± 0.0329 0.0020 ± 0.0025     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+        none focal              none       4  0.4188 ± 0.1063  0.9395 ± 0.0439     0.9787 ± 0.0106  0.9626 ± 0.0579 0.9697 ± 0.0268     0.3640 ± 0.4448  0.3581 ± 0.3965 0.3570 ± 0.4153     0.7449 ± 0.2380  0.8296 ± 0.1945 0.7673 ± 0.1773     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+        none    ce              none       4  0.4145 ± 0.0932  0.9197 ± 0.0935     0.9802 ± 0.0101  0.9387 ± 0.1144 0.9558 ± 0.0601     0.3158 ± 0.4303  0.3641 ± 0.3931 0.3013 ± 0.3744     0.7930 ± 0.1804  0.8531 ± 0.1411 0.8101 ± 0.1208     0.0033 ± 0.0067  0.0167 ± 0.0333 0.0056 ± 0.0111     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+        none    ce             smote       4  0.4059 ± 0.1172  0.8812 ± 0.0718     0.9848 ± 0.0113  0.8954 ± 0.0871 0.9361 ± 0.0459     0.3381 ± 0.3862  0.5075 ± 0.3546 0.3344 ± 0.3879     0.6998 ± 0.3334  0.9017 ± 0.0658 0.7433 ± 0.2678     0.0244 ± 0.0303  0.0697 ± 0.0791 0.0146 ± 0.0197     0.0005 ± 0.0009  0.0625 ± 0.1250 0.0009 ± 0.0019
+    balanced    ce             smote       4  0.3973 ± 0.1104  0.8796 ± 0.0755     0.9819 ± 0.0090  0.8984 ± 0.0895 0.9365 ± 0.0491     0.3567 ± 0.3806  0.4357 ± 0.3604 0.3029 ± 0.3808     0.7168 ± 0.2816  0.8051 ± 0.1499 0.7403 ± 0.2085     0.0035 ± 0.0056  0.0857 ± 0.1017 0.0067 ± 0.0106     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+    balanced focal random_oversample       4  0.3952 ± 0.1263  0.8886 ± 0.0749     0.9814 ± 0.0092  0.9061 ± 0.0932 0.9401 ± 0.0493     0.4544 ± 0.3780  0.4093 ± 0.4502 0.3605 ± 0.4273     0.6243 ± 0.3624  0.8513 ± 0.1274 0.6705 ± 0.2682     0.0025 ± 0.0049  0.1333 ± 0.2667 0.0048 ± 0.0097     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+        none    ce random_oversample       4  0.3925 ± 0.1011  0.8845 ± 0.0945     0.9782 ± 0.0127  0.9009 ± 0.1159 0.9345 ± 0.0644     0.4473 ± 0.3283  0.3999 ± 0.3796 0.3709 ± 0.3326     0.6012 ± 0.3677  0.8829 ± 0.1162 0.6534 ± 0.2635     0.0031 ± 0.0035  0.0173 ± 0.0329 0.0038 ± 0.0054     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+    balanced    ce random_oversample       4  0.3891 ± 0.1047  0.8837 ± 0.0730     0.9859 ± 0.0091  0.9008 ± 0.0892 0.9395 ± 0.0474     0.2500 ± 0.3000  0.3833 ± 0.4171 0.2962 ± 0.3473     0.6554 ± 0.3396  0.8369 ± 0.1333 0.7035 ± 0.2508     0.0173 ± 0.0281  0.0673 ± 0.1329 0.0062 ± 0.0094     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+
+Head-to-head (same DS1 folds and seeds 42, 43, 44)
+--------------------------------------------------
+          candidate          model    fusion class_weight loss sampler  n_runs f1_macro_meanstd accuracy_meanstd f1_macro_seed_meanstd precision_N_meanstd recall_N_meanstd    f1_N_meanstd precision_S_meanstd recall_S_meanstd    f1_S_meanstd precision_V_meanstd recall_V_meanstd    f1_V_meanstd precision_F_meanstd recall_F_meanstd    f1_F_meanstd precision_Q_meanstd recall_Q_meanstd    f1_Q_meanstd
+        2d_clinical    2d_clinical    concat     balanced   ce    none      12  0.4291 ± 0.0779  0.9440 ± 0.0228       0.4291 ± 0.0106     0.9758 ± 0.0122  0.9718 ± 0.0296 0.9735 ± 0.0134     0.5092 ± 0.3371  0.3387 ± 0.2928 0.3834 ± 0.2980     0.7775 ± 0.2028  0.8412 ± 0.1466 0.7888 ± 0.1428     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+          attention 1d_2d_clinical attention     balanced   ce    none      12  0.4224 ± 0.0847  0.9319 ± 0.0414       0.4224 ± 0.0039     0.9779 ± 0.0138  0.9560 ± 0.0501 0.9660 ± 0.0237     0.3912 ± 0.3788  0.3401 ± 0.3347 0.3264 ± 0.3469     0.8000 ± 0.1851  0.8585 ± 0.0998 0.8147 ± 0.1100     0.0856 ± 0.2881  0.0391 ± 0.1152 0.0047 ± 0.0139     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+attention_imbalance 1d_2d_clinical attention     balanced   ce    none      12  0.4224 ± 0.0847  0.9319 ± 0.0414       0.4224 ± 0.0039     0.9779 ± 0.0138  0.9560 ± 0.0501 0.9660 ± 0.0237     0.3912 ± 0.3788  0.3401 ± 0.3347 0.3264 ± 0.3469     0.8000 ± 0.1851  0.8585 ± 0.0998 0.8147 ± 0.1100     0.0856 ± 0.2881  0.0391 ± 0.1152 0.0047 ± 0.0139     0.0000 ± 0.0000  0.0000 ± 0.0000 0.0000 ± 0.0000
+
+Selected: 2d_clinical | 2d_clinical | fusion=concat | class_weight=balanced | loss=ce | sampler=none
+DS1 CV macro-F1: 0.4291 ± 0.0779
+
+DS2 test (one evaluation of the refit checkpoint)
+-------------------------------------------------
+macro-F1: 0.4209
+accuracy: 0.8689
+class, precision, recall, f1, support
+N, 0.9627, 0.8968, 0.9286, 44236
+S, 0.3727, 0.2814, 0.3207, 1837
+V, 0.6775, 0.8814, 0.7661, 3220
+F, 0.0506, 0.3789, 0.0893, 388
+Q, 0.0000, 0.0000, 0.0000, 7
+
+              precision    recall  f1-score   support
+
+           N     0.9627    0.8968    0.9286     44236
+           S     0.3727    0.2814    0.3207      1837
+           V     0.6775    0.8814    0.7661      3220
+           F     0.0506    0.3789    0.0893       388
+           Q     0.0000    0.0000    0.0000         7
+
+    accuracy                         0.8689     49688
+   macro avg     0.4127    0.4877    0.4209     49688
+weighted avg     0.9151    0.8689    0.8889     49688
+
+
+Limitation — classes F and Q
+----------------------------
+F and Q are reported in the macro-F1 and in the confusion matrix. Their low scores are a limitation of this final model, not a filtered result.
+DS2 F: precision=0.0506, recall=0.3789, F1=0.0893, support=388. Fusion beats are rare and morphologically overlap N and V, so the model does not separate them reliably under the patient-wise protocol.
+DS2 Q: precision=0.0000, recall=0.0000, F1=0.0000, support=7. After pacemaker records are removed, Q is extremely scarce and is concentrated in few recordings. A patient-wise split therefore gives the classifier almost no stable Q examples, and a low Q score should be discussed as a data limitation.
+
+Confusion matrices:
+  DS2: C:\Users\tits\OneDrive\Desktop\مصطفى\heart-x\outputs\figures\final_selection\ds2_confusion_matrix.csv
+  CV sums: C:\Users\tits\OneDrive\Desktop\مصطفى\heart-x\outputs\figures\final_selection
+Checkpoint: C:\Users\tits\OneDrive\Desktop\مصطفى\heart-x\outputs\checkpoints\heartx_final.pt
+
+External validation (binary normal/abnormal proxy)
+--------------------------------------------------
+Checkpoint: heartx_final.pt (2d_clinical, concat). This run does not change model selection and is not a second DS2 5-class test.
+Mapping: MIT-BIH N->normal, S/V/F/Q->abnormal. PTB-XL NORM->normal, MI/STTC/CD/HYP->abnormal.
+Limitation: beat-level AAMI classes cannot be mapped 1:1 onto PTB-XL diagnostic superclasses. PTB-XL windows (100 Hz, 1000 samples) are interpolated to the MIT-BIH length. PTB-XL subset: 2000 records, patient-wise, official strat_fold 10 as test (n=253).
+
+MIT-BIH internal test, binary proxy (same DS2 mask, n=49688): macro-F1=0.7452, accuracy=0.8772.
+  normal:   precision=0.9627, recall=0.8968, F1=0.9286, support=44236
+  abnormal: precision=0.4616, recall=0.7179, F1=0.5619, support=5452
+
+PTB-XL external test, binary proxy (n=253): macro-F1=0.5602, accuracy=0.5810.
+  normal:   precision=0.5805, recall=0.7537, F1=0.6558, support=134
+  abnormal: precision=0.5823, recall=0.3866, F1=0.4646, support=119
+
+Tables and confusion matrices: outputs/results/external_validation/ and outputs/figures/external_validation/.

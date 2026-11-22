@@ -71,10 +71,7 @@ def main() -> None:
     chosen = chosen[: args.num_samples]
 
     for i, idx in enumerate(chosen):
-<<<<<<< HEAD
-=======
         # Spectrograms may be float16 on disk; model weights are float32.
->>>>>>> c3e9d78ed97af81b116c3c9c5f37a1fdfab9bb8c
         t1 = torch.from_numpy(np.asarray(x_1d[idx : idx + 1], dtype=np.float32)).to(device)
         t2 = torch.from_numpy(np.asarray(x_2d[idx : idx + 1], dtype=np.float32)).to(device)
         tc = torch.from_numpy(np.asarray(clinical[idx : idx + 1], dtype=np.float32)).to(device)
