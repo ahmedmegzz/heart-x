@@ -18,13 +18,18 @@ Data:
 - `data/mit-bih-arrhythmia-database-1.0.0/`
 - `data/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/`
 
-## MIT-BIH protocol (Chazal / advisor-aligned)
+## MIT-BIH protocol (de Chazal)
 
-1. Exclude pacemaker recordings: **102, 104, 107, 217**
-2. Keep only DS1 ∪ DS2
-3. **DS2 = test only**
-4. **Train/val** split patient-wise **within DS1 only**
-5. Use **all** annotated AAMI beats (no per-record cap for final runs)
+The MIT-BIH Arrhythmia Database has 48 recordings. This study follows the inter-patient DS1/DS2 partition of de Chazal et al.
+
+1. **Remove the pacemaker recordings from the whole study:** **102, 104, 107, 217**. They are not assigned to DS1 or to DS2.
+2. Split the remaining 44 recordings into two disjoint sets of 22. A recording belongs to only one set.
+   - **DS1** — model selection, training, and validation: 101, 106, 108, 109, 112, 114, 115, 116, 118, 119, 122, **124**, 201, 203, 205, 207, 208, 209, 215, 220, 223, 230.
+   - **DS2** — test only: 100, 103, 105, 111, 113, 117, 121, 123, 200, 202, 210, 212, 213, 214, 219, 221, 222, 228, 231, 232, 233, 234.
+3. **Record 124 is inside DS1.** It is used in patient-wise selection and in the DS1 refit. It is not in DS2.
+4. **DS2 is evaluated once**, after the configuration is locked. It is not used to choose the model, the fusion, the imbalance method, or the seed.
+5. Train/validation splits are **patient-wise and stay inside DS1**. Beats from one recording are not placed in both train and validation.
+6. Final runs use **all** annotated AAMI beats (no per-record cap).
 
 ```bash
 python scripts/prepare_mitbih.py --method stft
@@ -78,7 +83,7 @@ python scripts/external_validation.py --checkpoint outputs/checkpoints/<run>.pt
 ## Final model selection (DS1 only)
 
 DS2 is not used to choose the model, the fusion, the imbalance method, or the seed.
-Record 124 is outside Chazal DS1/DS2 and is excluded from selection and from the final fit.
+Record 124 stays inside DS1 for that selection and for the final DS1 fit.
 The three candidates are compared with the same patient-wise folds and the same seeds.
 The imbalance method attached to the third candidate is the one with the best DS1
 cross-validation macro-F1 on the attention model.

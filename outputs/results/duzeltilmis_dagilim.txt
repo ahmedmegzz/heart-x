@@ -1,9 +1,10 @@
-HEART-X — Düzeltilmiş dağılım (DS1+124, S/F-aware val)
-========================================================
+HEART-X — Düzeltilmiş dağılım (Chazal DS1/DS2, S/F-aware val)
+==============================================================
 Protokol:
-  - Pacemaker 102/104/107/217 çıkarıldı
+  - Pacemaker kayıtları 102, 104, 107, 217 çalışmadan çıkarıldı (DS1/DS2 dışı)
+  - Kayıt 124 DS1 içindedir; DS2'de değildir
   - DS2 = test only
-  - Train/val patient-wise within DS1 (DS1 includes 124)
+  - Train/val patient-wise, yalnızca DS1 içinde
   - Validation chosen so S and F are both >= 30 (not 8-S collapse)
   - F-heavy record 208 kept in TRAIN when both sides meet the floor
 

@@ -4,10 +4,10 @@ Build processed MIT-BIH dual-stream dataset under the Chazal protocol.
 
 Protocol (advisor-aligned)
 --------------------------
-1. Exclude pacemaker recordings: 102, 104, 107, 217.
-2. Keep only DS1 ∪ DS2 records.
+1. Exclude pacemaker recordings 102, 104, 107, 217 from the whole study.
+2. Keep the de Chazal partition: DS1 (includes record 124) and DS2.
 3. DS2 = test only.
-4. Train / validation are split **only within DS1** (patient-wise GroupShuffleSplit).
+4. Train / validation are split **only within DS1** (patient-wise). Record 124 stays in DS1.
 5. By default use **all** annotated AAMI beats (no per-record cap).
 
 Example
@@ -147,7 +147,7 @@ def main() -> None:
     assert train_g.isdisjoint(val_g)
     assert (train_g | val_g).isdisjoint(test_g)
 
-    log_split_summary("MIT-BIH Chazal (+124, S/F-aware val)", split, records)
+    log_split_summary("MIT-BIH Chazal DS1/DS2 (S/F-aware val)", split, records)
     print(
         f"  DS1 train records={len(train_g)}  DS1 val records={len(val_g)}  "
         f"DS2 test records={len(test_g)}",
@@ -279,7 +279,7 @@ def main() -> None:
         "protocol_notes": [
             "Excluded pacemaker records 102, 104, 107, 217",
             "DS2 used only as test",
-            "Train/val split patient-wise within DS1 only (DS1 includes 124)",
+            "Train/val split patient-wise within DS1 only (record 124 is inside DS1)",
             "Validation chosen to ensure adequate S and F representation",
             "All AAMI beats used unless --max-beats-per-record set",
         ],

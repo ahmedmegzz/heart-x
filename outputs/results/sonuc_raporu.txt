@@ -9,8 +9,9 @@ Kaynak özetler:
 
 1) Protokol
 -----------
-- Pacemaker 102/104/107/217 çıkarıldı; DS2 = test only
-- DS1 + kayıt 124; train/val patient-wise, S/F-aware (val S=201, F=30)
+- Pacemaker kayıtları 102, 104, 107, 217 çalışmadan çıkarıldı; DS1 veya DS2'ye konmadı
+- Kayıt 124 DS1 içindedir, DS2'de değildir
+- DS2 = yalnızca test; train/val patient-wise ve yalnızca DS1 içinde, S/F-aware (val S=201, F=30)
 - Toplam 100.680 atım → Train 42.069 / Val 8.923 / Test 49.688
 - Birincil metrik: macro-F1
 

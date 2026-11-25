@@ -5,7 +5,7 @@ HEART-X — Güncelleme Sonrası Sonuç Özeti
 1) Veri / patient-wise split (MIT-BIH, max 300 atım/kayıt)
 ----------------------------------------------------------
 Toplam atım          : 14.377
-Split protokolü      : Chazal DS2 = test; DS1(+diğer) → GroupShuffleSplit train/val
+Split protokolü      : Pacemaker 102/104/107/217 çıkarıldı; DS2 = test; train/val yalnızca DS1 (124 DS1 içinde)
 
                  Train      Val       Test
 Örnek            6.587      1.198     6.592
